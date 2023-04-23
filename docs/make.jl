@@ -11,7 +11,7 @@ makedocs(;
     format=Documenter.HTML(;
         prettyurls=get(ENV, "CI", "false") == "true",
         canonical="https://kobusherbst.github.io/RDAIngest.jl",
-        edit_link="master",
+        edit_link="main",
         assets=String[],
     ),
     pages=[
@@ -21,5 +21,6 @@ makedocs(;
 
 deploydocs(;
     repo="github.com/kobusherbst/RDAIngest.jl",
-    devbranch="master",
+    devbranch="main",
+    push_preview = true,
 )
