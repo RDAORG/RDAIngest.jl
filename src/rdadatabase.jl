@@ -3,13 +3,14 @@
 
 Creates a SQLite database to store the information contained in the Reference Death Archive (RDA)
 """
-function createdatabase(path, name; replace = false)
+function createdatabase(path, name; replace=false)
     file = joinpath(path, "$name.sqlite")
     existed = isfile(file)
     if existed && !replace
         error("Database '$file' already exists.")
     end
     if existed && replace
+        GC.gc() #to ensure database file is released
         rm(file)
     end
     db = SQLite.DB(file)
@@ -20,7 +21,31 @@ function createdatabase(path, name; replace = false)
     createdatasets(db)
     createinstruments(db)
     createdeaths(db)
-    DBInterface.close!(db)
+    close(db)
+end
+"""
+    opendatabase(path::String, name::String)::SQLite.DB
+
+Open file on path as an SQLite database (assume .sqlite extension)
+"""
+function opendatabase(path::String, name::String)::SQLite.DB
+    file = joinpath(path, "$name.sqlite")
+    if isfile(file)
+        return SQLite.DB(file)
+    else
+        error("File '$file' not found.")
+    end
+end
+
+"""
+    get_table(db::SQLite.DB, table::String)::AbstractDataFrame
+
+Retrieve table `table` as a DataFrame from `db`
+"""
+function get_table(db::SQLite.DB, table::String)::AbstractDataFrame
+    sql = "SELECT * FROM $(table)"
+    df = DBInterface.execute(db, sql; iterate_rows=true) |> DataFrame
+    return df
 end
 """
     createsources(db::SQLite.DB)
@@ -39,6 +64,7 @@ function createsources(db::SQLite.DB)
     CREATE TABLE "sites" (
     "site_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "name" TEXT NOT NULL,
+    "site_iso_code" TEXT NOT NULL,
     "source_id" INTEGER NOT NULL,
     CONSTRAINT "fk_sites_source_id" FOREIGN KEY ("source_id") REFERENCES "sources" ("source_id") ON DELETE CASCADE ON UPDATE NO ACTION
     );
@@ -73,7 +99,7 @@ function createprotocols(db::SQLite.DB)
     "ethics_document_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "ethics_id" INTEGER NOT NULL,
     "name" TEXT NOT NULL,
-    "document" blob,
+    "document" BLOB,
     CONSTRAINT "fk_ethics_documents_ethics_id" FOREIGN KEY ("ethics_id") REFERENCES "ethics" ("ethics_id") ON DELETE CASCADE ON UPDATE NO ACTION
     );
     """
@@ -118,7 +144,7 @@ function createprotocols(db::SQLite.DB)
     "protocol_document_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "protocol_id" INTEGER NOT NULL,
     "name" TEXT NOT NULL,
-    "document" blob,
+    "document" BLOB,
     CONSTRAINT "fk_protocol_documents_protocol_id" FOREIGN KEY ("protocol_id") REFERENCES "protocols" ("protocol_id") ON DELETE CASCADE ON UPDATE NO ACTION
     );
     """
@@ -344,7 +370,7 @@ function createinstruments(db::SQLite.DB)
     "intrument_document_id" INTEGER NOT NULL,
     "instrument_id" INTEGER NOT NULL,
     "name" TEXT NOT NULL,
-    "document" blob,
+    "document" BLOB,
     PRIMARY KEY ("intrument_document_id"),
     CONSTRAINT "fk_instrument_documents_instrument_id" FOREIGN KEY ("instrument_id") REFERENCES "instruments" ("instrument_id") ON DELETE CASCADE ON UPDATE NO ACTION,
     CONSTRAINT "u_instrument_documents" UNIQUE ("instrument_id" ASC, "name" ASC)
