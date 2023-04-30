@@ -188,10 +188,8 @@ function createtransformations(db::SQLite.DB)
     CREATE TABLE "data_ingestions" (
     "data_ingestion_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "source_id" INTEGER NOT NULL,
-    "transformation_id" INTEGER NOT NULL, --transformation used to ingest the data
     "date_received" DATE NOT NULL,
     "description" TEXT,
-    CONSTRAINT "fk_data_ingestions_transformation_id" FOREIGN KEY ("transformation_id") REFERENCES "transformations" ("transformation_id") ON DELETE NO ACTION ON UPDATE RESTRICT,
     CONSTRAINT "fk_data_ingestions_source_id" FOREIGN KEY ("source_id") REFERENCES "sources" ("source_id") ON DELETE CASCADE ON UPDATE RESTRICT
     );
     """
@@ -225,7 +223,8 @@ function createvariables(db)
     sql = raw"""
     CREATE TABLE "vocabularies" (
     "vocabulary_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    "name" TEXT
+    "name" TEXT NOT NULL,
+    "description" TEXT
     );
     """
     DBInterface.execute(db, sql)
@@ -233,6 +232,7 @@ function createvariables(db)
     CREATE TABLE "vocabulary_items" (
     "vocabulary_item_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "vocabulary_id" INTEGER NOT NULL,
+    "value" TEXT NOT NULL,
     "code" TEXT NOT NULL,
     "description" TEXT,
     CONSTRAINT "fk_vocabulary_items" FOREIGN KEY ("vocabulary_id") REFERENCES "vocabularies"("vocabulary_id") ON DELETE NO ACTION ON UPDATE NO ACTION
@@ -240,32 +240,60 @@ function createvariables(db)
     """
     DBInterface.execute(db, sql)
     sql = raw"""
+    CREATE TABLE "domains" (
+    "domain_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "name" TEXT NOT NULL,
+    "description"CHAMPS Level2 Data TEXT
+    );
+    """
+    DBInterface.execute(db, sql)
+    sql = raw"""
+    CREATE UNIQUE INDEX "i_domain_name"
+    ON "domains" (
+    "name" ASC
+    );
+    """
+    DBInterface.execute(db, sql)
+    sql = raw"""
     CREATE TABLE "variables" (
     "variable_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "domain_id" INTEGER NOT NULL,
     "name" TEXT NOT NULL,
     "value_type_id" INTEGER NOT NULL,
     "vocabulary_id" INTEGER,
     "description" TEXT,
+    "note" TEXT,
+    CONSTRAINT "fk_variables_domain_id" FOREIGN KEY ("domain_id") REFERENCES "domains"("domain_id") ON DELETE NO ACTION ON UPDATE NO ACTION,
     CONSTRAINT "fk_variables_value_type_id" FOREIGN KEY ("value_type_id") REFERENCES "value_types"("value_type_id") ON DELETE NO ACTION ON UPDATE NO ACTION,
     CONSTRAINT "fk_variables_vocabulary_id" FOREIGN KEY ("vocabulary_id") REFERENCES "vocabularies"("vocabulary_id") ON DELETE NO ACTION ON UPDATE NO ACTION
     );
     """
     DBInterface.execute(db, sql)
     sql = raw"""
-    CREATE UNIQUE INDEX "i_variables_name"
+    CREATE UNIQUE INDEX "i_variables_domain_name"
     ON "variables" (
+    "domain_id" ASC,
     "name" ASC
+    );
+    """
+    DBInterface.execute(db, sql)
+    sql = raw"""
+    CREATE TABLE "vocabulary_mapping" (
+    "vocabulary_mapping_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "from_vocabulary_item" INTEGER NOT NULL,
+    "to_vocabulary_item" INTEGER NOT NULL,
+    CONSTRAINT "fk_vocabulary_mapping" FOREIGN KEY ("from_vocabulary_item") REFERENCES "vocabulary_items" ("vocabulary_item_id") ON DELETE NO ACTION ON UPDATE NO ACTION,
+    CONSTRAINT "fk_vocabulary_mapping" FOREIGN KEY ("to_vocabulary_item") REFERENCES "vocabulary_items" ("vocabulary_item_id") ON DELETE NO ACTION ON UPDATE NO ACTION
     );
     """
     DBInterface.execute(db, sql)
     types = DataFrame([(value_type_id=1, value_type="Integer", description=""),
         (value_type_id=2, value_type="Float", description=""),
         (value_type_id=3, value_type="String", description=""),
-        (value_type_id=4, value_type="Date", description="ISO Date yyyyMMdd"),
-        (value_type_id=5, value_type="Datetime", description="ISO Date yyyyMMddTHH:mm:ss.sss"),
+        (value_type_id=4, value_type="Date", description="ISO Date yyyy-mm-dd"),
+        (value_type_id=5, value_type="Datetime", description="ISO Datetime yyyy-mm-ddTHH:mm:ss.sss"),
         (value_type_id=6, value_type="Time", description="ISO Time HH:mm:ss.sss"),
-        (value_type_id=7, value_type="Integer category", description="Vocabulary with integer code, stored as Integer"),
-        (value_type_id=8, value_type="String category", description="Vocabulary with string code, stored as String")
+        (value_type_id=7, value_type="Categorical", description="Category represented by a Vocabulary with integer value and string code, stored as Integer")
     ])
     SQLite.load!(types, db, "value_types")
 end
@@ -296,7 +324,7 @@ function createdatasets(db::SQLite.DB)
     CREATE TABLE "data" (
     "row_id" INTEGER NOT NULL,
     "variable_id" INTEGER NOT NULL,
-    "value" TEXT NOT NULL,
+    "value" TEXT NULL,
     PRIMARY KEY ("row_id", "variable_id"),
     CONSTRAINT "fk_data_row_id" FOREIGN KEY ("row_id") REFERENCES "datarows" ("row_id") ON DELETE CASCADE ON UPDATE RESTRICT,
     CONSTRAINT "fk_data_variable_id" FOREIGN KEY ("variable_id") REFERENCES "variables" ("variable_id") ON DELETE CASCADE ON UPDATE RESTRICT,
@@ -334,6 +362,19 @@ function createdatasets(db::SQLite.DB)
     );
     """
     DBInterface.execute(db, sql)
+    sql = raw"""
+    CREATE TABLE "ingest_datasets" (
+        ingest_dataset_id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        data_ingestion_id INTEGER NOT NULL,
+        transformation_id INTEGER NOT NULL,
+        dataset_id INTEGER NOT NULL,
+        CONSTRAINT "fk_ingest_datasets_data_ingestion_id" FOREIGN KEY ("data_ingestion_id") REFERENCES "data_ingestions" ("data_ingestion_id") ON DELETE CASCADE ON UPDATE RESTRICT,
+        CONSTRAINT "fk_ingest_datasets_transformation_id" FOREIGN KEY ("transformation_id") REFERENCES "transformations" ("transformation_id") ON DELETE CASCADE ON UPDATE RESTRICT
+        CONSTRAINT "fk_ingest_datasets_dataset_id" FOREIGN KEY ("dataset_id") REFERENCES "datasets" ("dataset_id") ON DELETE NO ACTION ON UPDATE RESTRICT
+    )
+    """
+    DBInterface.execute(db, sql)
+
 end
 """
     createinstruments(db::SQLite.DB)
