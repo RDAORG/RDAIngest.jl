@@ -243,7 +243,7 @@ function createvariables(db)
     CREATE TABLE "domains" (
     "domain_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "name" TEXT NOT NULL,
-    "description"CHAMPS Level2 Data TEXT
+    "description" TEXT NOT NULL
     );
     """
     DBInterface.execute(db, sql)

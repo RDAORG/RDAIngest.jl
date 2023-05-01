@@ -7,10 +7,12 @@ using DBInterface
 using ConfigEnv
 using CSV
 using Dates
+using Arrow
 
 export opendatabase, get_table, addsource, getsource, createdatabase, getnamedkey,
     read_champs_data, add_champs_sites, add_champs_protocols, read_champs_variables,
-    add_dataingest, add_transformation, ingest_champs_deaths, save_CHAMPS_variables, import_champs_dataset
+    add_dataingest, add_transformation, ingest_champs_deaths, add_champs_variables, import_champs_dataset,
+    link_deathrows, ingest_champs, dataset_to_dataframe, dataset_to_arrow, dataset_to_csv
 
 struct VocabularyItem
     value::Int64
@@ -23,11 +25,133 @@ struct Vocabulary
     items::Vector{VocabularyItem}
 end
 
+"""
+   ingest_champs(dbpath, dbname, datapath, ingest, transformation, code_reference, author, description)
 
+!!! note
+    The database should exist and be in the RDA format created by the [`createdatabase`](@ref) function
+
+This is the main function to ingest a CHAMPS Level 2 data distribution. The current version does not ingest the laboratory or TAC results.
+
+## Parameters
+  * `dbpath        `: The file path to the database.
+  * `dbname        `: The name of the database, .sqlite extension assumed.
+  * `datapath      `: The file path to the CHAMPS data distribution, assumes the distribution is extracyed into folder `CHAMPS_de_identified_data`.
+  * `ingest        `: The description of the data ingest.
+  * `transformation`: The description of the transformation for the data ingest.
+  * `code-reference`: The reference to the code used for the transformation `function` in `package`
+  * `author        `: The transformation author
+  * `description   `: The dataset description
+
+## Method
+
+1. A **CHAMPS** source is created if it doesn't exist, using function [`addsource`](@ref).
+2. The CHAMPS sites are extracted from the `CHAMPS_deid_basic_demographics` dataset and saved using the [`add_champs_sites`](@ref) function.
+3. The CHAMPS protocol are added as pdfs from a sub-directory `CHAMPS\\Protocols` in `datapath` using the [`add_champs_protocols`](@ref) function.
+4. A data ingest is created using the [`add_dataingest`](@ref) function.
+5. A transformation reprenting the complete data ingest is created using the [`add_transformation`](@ref) function.
+6. A entry for each death is inserted in the `deaths` table, for each row the `CHAMPS_deid_basic_demographics` dataset using the [`ingest_champs_deaths`](@ref) function.
+7. The CHAMPS dataset variables are imported from a manually created data dictionary file as described in the [`add_champs_variables`](@ref) function.
+8. The CHAMPS datasets are imported using the [`import_champs_dataset`](@ref) function.
+9. The CHAMPS deaths are linked to the dataset rows containing the detail data about each death in the CHAMPS data distribution, using the function [`link_deathrows`](@ref)
+
+"""
+function ingest_champs(dbpath, dbname, datapath, ingest, transformation, code_reference, author, description)
+    db = opendatabase(dbpath, dbname)
+    try
+        champs = addsource(db, "CHAMPS")
+        add_champs_sites(db, datapath)
+        add_champs_protocols(db, datapath)
+        ingest = add_dataingest(db, champs, today(), ingest)
+        transformation = add_transformation(db, 1, 1, transformation, code_reference, today(), author)
+        ingest_champs_deaths(db, ingest, datapath)
+        add_champs_variables(db, datapath, "Format_CHAMPS_deid_basic_demographics")
+        add_champs_variables(db, datapath, "Format_CHAMPS_deid_verbal_autopsy")
+        add_champs_variables(db, datapath, "Format_CHAMPS_deid_decode_results")
+        basic_ds = import_champs_dataset(db, transformation, ingest, datapath, "CHAMPS_deid_basic_demographics", description)
+        va_ds = import_champs_dataset(db, transformation, ingest, datapath, "CHAMPS_deid_verbal_autopsy", description)
+        decode_ds = import_champs_dataset(db, transformation, ingest, datapath, "CHAMPS_deid_decode_results", description)
+        domain = getnamedkey(db, "domains", "CHAMPS", Symbol("domain_id"))
+        death_idvar = get_variable(db, domain, "champs_deid")
+        link_deathrows(db, ingest, basic_ds, death_idvar) #CHAMPS_deid_basic_demographics
+        link_deathrows(db, ingest, va_ds, death_idvar) #CHAMPS_deid_verbal_autopsy
+        link_deathrows(db, ingest, decode_ds, death_idvar) #CHAMPS_deid_decode_results
+        return nothing
+    finally
+        close(db)
+    end
+end
+"""
+    dataset_to_dataframe(db::SQLite.DB, dataset)::AbstractDataFrame
+
+Return a dataset with id `dataset` as a DataFrame in the wide format
+"""
+function dataset_to_dataframe(db::SQLite.DB, dataset)::AbstractDataFrame
+    sql = """
+    SELECT
+        d.row_id,
+        v.name variable,
+        d.value
+    FROM data d
+      JOIN datarows r ON d.row_id = r.row_id
+      JOIN variables v ON d.variable_id = v.variable_id
+    WHERE r.dataset_id = @dataset
+    """
+    stmt = DBInterface.prepare(db, sql)
+    long = DBInterface.execute(stmt, (dataset = dataset)) |> DataFrame
+    return unstack(long, :row_id, :variable, :value)
+end
+"""
+    dataset_to_arrow(db, dataset, datapath)
+
+Save a dataset in the arrow format
+"""
+function dataset_to_arrow(db, dataset, datapath)
+    outputdir = joinpath(datapath, "arrowfiles")
+    if !isdir(outputdir)
+        mkpath(outputdir)
+    end
+    df = dataset_to_dataframe(db, dataset)
+    Arrow.write(joinpath(outputdir, "$(datasetname(db,dataset)).arrow"), df, compress=:zstd)
+end
+"""
+    dataset_to_csv(db, dataset, datapath)
+
+Save a dataset in compressed csv format
+"""
+function dataset_to_csv(db, dataset, datapath)
+    outputdir = joinpath(datapath, "csvfiles")
+    if !isdir(outputdir)
+        mkpath(outputdir)
+    end
+    df = dataset_to_dataframe(db, dataset)
+    CSV.write(joinpath(outputdir, "$(datasetname(db,dataset)).gz"), df, compress=true)
+end
+"""
+    datasetname(db, dataset)
+
+Return dataset name, given the `dataset_id`
+"""
+function datasetname(db, dataset)
+    sql = """
+    SELECT
+      name
+    FROM datasets
+    WHERE dataset_id = @dataset
+    """
+    stmt = DBInterface.prepare(db, sql)
+    result = DBInterface.execute(stmt, (dataset = dataset))
+    if isempty(result)
+        return missing
+    else
+        df = DataFrame(result)
+        return df[1, :name]
+    end
+end
 """
     getnamedkey(db, table, key, keycol)
 
- Return the integer key from table `table` in column `keycol` for key with name `key`
+ Return the integer key from table `table` in column `keycol` (`keycol` must be a `Symbol`) for key with name `key`
 """
 function getnamedkey(db, table, key, keycol)
     sql = "SELECT * FROM $table WHERE name = @name"
@@ -38,6 +162,28 @@ function getnamedkey(db, table, key, keycol)
     else
         df = DataFrame(result)
         return df[1, keycol]
+    end
+end
+"""
+    get_variable(db, domain, name)
+
+Returns the `variable_id` of variable named `name` in domain with id `domain`
+"""
+function get_variable(db, domain, name)
+    sql = """
+    SELECT
+      variable_id id
+    FROM variables
+    WHERE domain_id = @domain
+      AND name = @name
+    """
+    stmt = DBInterface.prepare(db, sql)
+    result = DBInterface.execute(stmt, (domain=domain, name=name))
+    if isempty(result)
+        return missing
+    else
+        df = DataFrame(result)
+        return df[1, :id]
     end
 end
 """
@@ -89,11 +235,12 @@ function add_champs_sites(db::SQLite.DB, datapath)
     insertcols!(sites, 1, :source_id => source)
     sites.site_id = 1:nrow(sites)
     select!(sites, :site_id, :site_iso_code => ByRow(x -> x) => :name, :site_iso_code, :source_id)
-    sql = "INSERT INTO sites (name, site_iso_code, source_id) VALUES (@name, @site_iso_code, @source_id)"
+    sql = "INSERT OR IGNORE INTO sites (name, site_iso_code, source_id) VALUES (@name, @site_iso_code, @source_id)"
     stmt = DBInterface.prepare(db, sql)
     for row in eachrow(sites)
         DBInterface.execute(stmt, (name=row.name, site_iso_code=row.site_iso_code, source_id=row.source_id))
     end
+    return nothing
 end
 
 """
@@ -129,6 +276,7 @@ function add_champs_protocols(db::SQLite.DB, datapath)
             end
         end
     end
+    return nothing
 end
 """
     lines(str)
@@ -167,7 +315,6 @@ function read_champs_variables(path, file)
         return df
     end
 end
-
 """
     get_champs_vocabulary(variable, l)::Vocabulary
 
@@ -225,12 +372,12 @@ function add_transformation(db::SQLite.DB, type::Int64, status::Int64, descripti
         error("Unable to insert transformation")
     end
 end
-"""P
+"""
     ingest_champs_deaths(db::SQLite.DB, ingest::Int64, path::String)
 
-INSERT CHAMPS deaths into the deaths table, for a specified data ingest. Returns a Dataframe suitable for lloking up the death_id from the CHAMPS deid.
+INSERT CHAMPS deaths into the deaths table, for a specified data ingest. 
 """
-function ingest_champs_deaths(db::SQLite.DB, ingest::Int64, path::String)::AbstractDataFrame
+function ingest_champs_deaths(db::SQLite.DB, ingest::Int64, path::String)
     deaths = read_champs_data(path, "CHAMPS_deid_basic_demographics")
     sites = DBInterface.execute(db, "SELECT * FROM sites WHERE source_id = $(getsource(db, "CHAMPS"));") |> DataFrame
     sitedeaths = innerjoin(deaths, sites, on=:site_iso_code, matchmissing=:notequal)
@@ -242,7 +389,7 @@ function ingest_champs_deaths(db::SQLite.DB, ingest::Int64, path::String)::Abstr
     for row in eachrow(sitedeaths)
         DBInterface.execute(stmt, (site_id=row.site_id, external_id=row.champs_deid, ingest=ingest))
     end
-    return DBInterface.execute(db, "SELECT death_id, external_id FROM deaths WHERE data_ingestion_id = $(ingest);") |> DataFrame
+    return nothing
 end
 """
     getdomain(db::SQLite.DB, domainname)
@@ -254,13 +401,13 @@ function getdomain(db::SQLite.DB, domainname)
 end
 
 """
-    save_CHAMPS_variables(db::SQLite.DB, path::String)
+    add_champs_variables(db::SQLite.DB, path::String)
 
 Save the CHAMPS variables, including vocabularies for categorical variables.
 !!! note
     Ingested data is not checked to ensure that categorical variable values conform to the vocabulary, in fect in the provided data thre are deviations, mostly in letter case. Common categries, such as the verbal autopsy indicators are also not converted to categorical values.
 """
-function save_CHAMPS_variables(db::SQLite.DB, path::String, dictionary::String)
+function add_champs_variables(db::SQLite.DB, path::String, dictionary::String)
     domain = getdomain(db, "CHAMPS")
     if ismissing(domain)  # insert CHAMPS domain
         domain = DBInterface.lastrowid(DBInterface.execute(db, "INSERT INTO domains(name,description) VALUES('CHAMPS','CHAMPS Level2 Data')"))
@@ -324,9 +471,9 @@ end
 """
     import_champs_dataset(db::SQLite.DB, transformation, ingest, path, dataset_name)
 
-Insert dataset, datarows, and data into SQLite db
+Insert dataset, datarows, and data into SQLite db and returns the datatset_id
 """
-function import_champs_dataset(db::SQLite.DB, transformation, ingest, path, dataset_name, description)
+function import_champs_dataset(db::SQLite.DB, transformation, ingest, path, dataset_name, description)::Int64
     try
         SQLite.transaction(db)
         data = read_champs_data(path, dataset_name)
@@ -356,11 +503,11 @@ function import_champs_dataset(db::SQLite.DB, transformation, ingest, path, data
             add_data_column(db, variable_id, coldata)
         end
         SQLite.commit(db)
+        return dataset_id
     catch e
         SQLite.rollback(db)
         throw(e)
     end
-    return nothing
 end
 """
     add_data_column(db::SQLite.DB, variable_id, coldata)
@@ -375,8 +522,9 @@ function add_data_column(db::SQLite.DB, variable_id, coldata)
     stmt = DBInterface.prepare(db, sql)
     isdate = eltype(coldata.value) >: Date
     for row in eachrow(coldata)
-        DBInterface.execute(stmt, (row_id=row.row_id, variable_id=variable_id, value=(isdate && !ismissing(row.value) ? Dates.format(row.value,"yyyy-mm-dd") : row.value)))
+        DBInterface.execute(stmt, (row_id=row.row_id, variable_id=variable_id, value=(isdate && !ismissing(row.value) ? Dates.format(row.value, "yyyy-mm-dd") : row.value)))
     end
+    return nothing
 end
 """
     add_dataset_variables(db::SQLite.DB, variables, dataset_id)
@@ -392,6 +540,7 @@ function add_dataset_variables(db::SQLite.DB, variables, dataset_id)
     for row in eachrow(variables)
         DBInterface.execute(stmt, (dataset_id=dataset_id, variable_id=row.variable_id))
     end
+    return nothing
 end
 """
     lookup_variables(db::SQLite.DB, variable_names, domain)
@@ -420,6 +569,7 @@ function add_dataset_ingest(db::SQLite.DB, dataset_id, transformation, ingest)
     """
     stmt = DBInterface.prepare(db, sql)
     DBInterface.execute(stmt, (data_ingestion_id=ingest, transformation_id=transformation, dataset_id=dataset_id))
+    return nothing
 end
 """
     add_transformation_output(db, dataset_id, transformation)
@@ -433,6 +583,44 @@ function add_transformation_output(db::SQLite.DB, dataset_id, transformation)
     """
     stmt = DBInterface.prepare(db, sql)
     DBInterface.execute(stmt, (transformation_id=transformation, dataset_id=dataset_id))
+    return nothing
+end
+
+"""
+    link_deathrows(db::SQLite.DB, transformation, ingest, dataset_id, death_identifier, identifier_domain)
+
+Insert records into `deathrows` table to link dataset `dataset_id` to `deaths` table. Limited to a specific ingest.
+`death_identifier` is the variable in the dataset that corresponds to the `external_id` of the death.
+"""
+function link_deathrows(db::SQLite.DB, ingest, dataset, death_identifier)
+    if !dataset_in_ingest(db, dataset, ingest)
+        error("Dataset $dataset not part of data ingest $ingest")
+    end
+    sql = """
+    INSERT OR IGNORE INTO death_rows (death_id, row_id)
+    SELECT
+        d.death_id,
+        data.row_id
+    FROM deaths d
+        JOIN data ON d.external_id = data.value
+        JOIN datarows r ON data.row_id = r.row_id
+    WHERE d.data_ingestion_id = @ingest
+       AND data.variable_id = @death_identifier
+       AND r.dataset_id = @dataset
+    """
+    stmt = DBInterface.prepare(db, sql)
+    DBInterface.execute(stmt, (ingest=ingest, death_identifier=death_identifier, dataset=dataset))
+    return nothing
+end
+function dataset_in_ingest(db, dataset, ingest)
+    sql = """
+        SELECT COUNT(*) n FROM ingest_datasets
+        WHERE data_ingestion_id = @ingest
+          AND dataset_id = @dataset;
+    """
+    stmt = DBInterface.prepare(db, sql)
+    df = DBInterface.execute(stmt, (ingest=ingest, dataset=dataset)) |> DataFrame
+    return nrow(df) > 0 && df[1, :n] > 0
 end
 
 include("rdadatabase.jl")

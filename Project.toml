@@ -4,6 +4,7 @@ authors = ["Kobus Herbst<kobus.herbst@ahri.org>"]
 version = "0.1.0-DEV"
 
 [deps]
+Arrow = "69666777-d1a9-59fb-9406-91d4454c9d45"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
 ConfigEnv = "01234589-554d-41b7-ae5c-7b6ee2db6796"
