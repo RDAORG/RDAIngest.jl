@@ -12,7 +12,7 @@ using Arrow
 export opendatabase, get_table, addsource, getsource, createdatabase, getnamedkey,
     read_champs_data, add_champs_sites, add_champs_protocols, read_champs_variables,
     add_dataingest, add_transformation, ingest_champs_deaths, add_champs_variables, import_champs_dataset,
-    link_deathrows, ingest_champs, dataset_to_dataframe, dataset_to_arrow, dataset_to_csv
+    link_deathrows, ingest_champs, dataset_to_dataframe, dataset_to_arrow, dataset_to_csv, savedataframe
 
 struct VocabularyItem
     value::Int64
@@ -621,6 +621,15 @@ function dataset_in_ingest(db, dataset, ingest)
     stmt = DBInterface.prepare(db, sql)
     df = DBInterface.execute(stmt, (ingest=ingest, dataset=dataset)) |> DataFrame
     return nrow(df) > 0 && df[1, :n] > 0
+end
+function savedataframe(db::SQLite.DB, df::AbstractDataFrame, table)
+    colnames = names(df)
+    paramnames = map(s -> "@" * s, names) #add @ to column names
+    sql = "INSERT INTO $table ($(join(colnames, ", "))) VALUES ($(join(paramnames, ", ")));"
+    stmt = DBInterface.prepare(db, sql)
+    for row in eachrow(df)
+        DBInterface.execute(stmt, NamedTuple(row))
+    end
 end
 
 include("rdadatabase.jl")

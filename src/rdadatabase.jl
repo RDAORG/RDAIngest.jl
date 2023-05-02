@@ -13,6 +13,9 @@ function createdatabase(path, name; replace=false)
         GC.gc() #to ensure database file is released
         rm(file)
     end
+    if !existed && !isdir(path)
+        mkpath(path)
+    end
     db = SQLite.DB(file)
     createsources(db)
     createprotocols(db)
