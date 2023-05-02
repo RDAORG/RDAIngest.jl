@@ -83,3 +83,11 @@ The variables representing the data contained in the dataset, is described by th
 | vocabularies            | The values a categorical variables can assume, are contained in a vocabulary  |
 | vocabulary_items        | The individual categories (codes) in a vocabulary                             |
 | vocabulary_mapping      | The items of one vocabulary can be mapped to another vocabulary               |
+
+In the case of the CHAMPS data, the data dictionaries are manually extracted from the data distribution document and saved as csv files in the RDA repository.
+
+The format of the file is (the field separator is a semi-colon):
+ * `Column_Name`: The variable name
+ * `Key` : `Yes` if the variable is a key to the data
+ * `Description`: The description of the variable, if the description contains more than one line, in the case of a categorical variable, the vocabulary appears from line two onwards as comma separated text containing code and description.
+ * `Note`: A note regarding the variable
