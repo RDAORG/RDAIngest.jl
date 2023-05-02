@@ -42,6 +42,7 @@ This is the main function to ingest a CHAMPS Level 2 data distribution. The curr
   * `code-reference`: The reference to the code used for the transformation `function` in `package`
   * `author        `: The transformation author
   * `description   `: The dataset description
+  * `dictionarypath`: The path to the data dictionaries
 
 ## Method
 
@@ -56,7 +57,7 @@ This is the main function to ingest a CHAMPS Level 2 data distribution. The curr
 9. The CHAMPS deaths are linked to the dataset rows containing the detail data about each death in the CHAMPS data distribution, using the function [`link_deathrows`](@ref)
 
 """
-function ingest_champs(dbpath, dbname, datapath, ingest, transformation, code_reference, author, description)
+function ingest_champs(dbpath, dbname, datapath, ingest, transformation, code_reference, author, description, dictionarypath)
     db = opendatabase(dbpath, dbname)
     try
         champs = addsource(db, "CHAMPS")
@@ -65,9 +66,9 @@ function ingest_champs(dbpath, dbname, datapath, ingest, transformation, code_re
         ingest = add_dataingest(db, champs, today(), ingest)
         transformation = add_transformation(db, 1, 1, transformation, code_reference, today(), author)
         ingest_champs_deaths(db, ingest, datapath)
-        add_champs_variables(db, datapath, "Format_CHAMPS_deid_basic_demographics")
-        add_champs_variables(db, datapath, "Format_CHAMPS_deid_verbal_autopsy")
-        add_champs_variables(db, datapath, "Format_CHAMPS_deid_decode_results")
+        add_champs_variables(db, dictionarypath, "Format_CHAMPS_deid_basic_demographics")
+        add_champs_variables(db, dictionarypath, "Format_CHAMPS_deid_verbal_autopsy")
+        add_champs_variables(db, dictionarypath, "Format_CHAMPS_deid_decode_results")
         basic_ds = import_champs_dataset(db, transformation, ingest, datapath, "CHAMPS_deid_basic_demographics", description)
         va_ds = import_champs_dataset(db, transformation, ingest, datapath, "CHAMPS_deid_verbal_autopsy", description)
         decode_ds = import_champs_dataset(db, transformation, ingest, datapath, "CHAMPS_deid_decode_results", description)
@@ -95,7 +96,7 @@ function dataset_to_dataframe(db::SQLite.DB, dataset)::AbstractDataFrame
     FROM data d
       JOIN datarows r ON d.row_id = r.row_id
       JOIN variables v ON d.variable_id = v.variable_id
-    WHERE r.dataset_id = @dataset
+    WHERE r.dataset_id = @dataset;
     """
     stmt = DBInterface.prepare(db, sql)
     long = DBInterface.execute(stmt, (dataset = dataset)) |> DataFrame
@@ -233,13 +234,8 @@ function add_champs_sites(db::SQLite.DB, datapath)
     sites = combine(groupby(df, :site_iso_code), nrow => :n)
     source = getsource(db, "CHAMPS")
     insertcols!(sites, 1, :source_id => source)
-    sites.site_id = 1:nrow(sites)
-    select!(sites, :site_id, :site_iso_code => ByRow(x -> x) => :name, :site_iso_code, :source_id)
-    sql = "INSERT OR IGNORE INTO sites (name, site_iso_code, source_id) VALUES (@name, @site_iso_code, @source_id)"
-    stmt = DBInterface.prepare(db, sql)
-    for row in eachrow(sites)
-        DBInterface.execute(stmt, (name=row.name, site_iso_code=row.site_iso_code, source_id=row.source_id))
-    end
+    select!(sites, :site_iso_code => ByRow(x -> x) => :name, :site_iso_code, :source_id)
+    savedataframe(db, sites, "sites")
     return nothing
 end
 
@@ -296,7 +292,7 @@ Read a csv file listing variables variables in a CHAMPS dataset, the files are:
 These files are manually created from the 'CHAMPS De-Identified Data Set Description v4.2.pdf' file distributed with the CHAMPS de-identified dataset by exporting the pdf to an Excel spreadsheet and manually extracting the variable lists as csv files.
 """
 function read_champs_variables(path, file)
-    file = joinpath(path, "CHAMPS", "CHAMPS_de_identified_data", "$file.csv")
+    file = joinpath(path, "$file.csv")
     if !isfile(file)
         error("File '$file' not found.")
     else
@@ -381,14 +377,7 @@ function ingest_champs_deaths(db::SQLite.DB, ingest::Int64, path::String)
     deaths = read_champs_data(path, "CHAMPS_deid_basic_demographics")
     sites = DBInterface.execute(db, "SELECT * FROM sites WHERE source_id = $(getsource(db, "CHAMPS"));") |> DataFrame
     sitedeaths = innerjoin(deaths, sites, on=:site_iso_code, matchmissing=:notequal)
-    sql = """
-      INSERT INTO deaths (site_id, external_id, data_ingestion_id)
-      VALUES (@site_id, @external_id, @ingest)
-    """
-    stmt = DBInterface.prepare(db, sql)
-    for row in eachrow(sitedeaths)
-        DBInterface.execute(stmt, (site_id=row.site_id, external_id=row.champs_deid, ingest=ingest))
-    end
+    savedataframe(db, select(sitedeaths, :site_id, :champs_deid => :external_id, [] => Returns(ingest) => :data_ingestion_id, copycols=false), "deaths")
     return nothing
 end
 """
@@ -413,7 +402,7 @@ function add_champs_variables(db::SQLite.DB, path::String, dictionary::String)
         domain = DBInterface.lastrowid(DBInterface.execute(db, "INSERT INTO domains(name,description) VALUES('CHAMPS','CHAMPS Level2 Data')"))
     end
     # start with basic demographic data
-    variables = read_champs_variables(path, dictionary)
+    variables = read_champs_variables(joinpath(path, "CHAMPS"), dictionary)
     insertcols!(variables, 1, :domain_id => domain)
     #variable insert SQL
     sql = """
@@ -487,7 +476,7 @@ function import_champs_dataset(db::SQLite.DB, transformation, ingest, path, data
         dataset_id = DBInterface.lastrowid(DBInterface.execute(stmt, (name=dataset_name, date_created=Dates.format(today(), "yyyy-mm-dd"), description=description)))
         add_dataset_ingest(db, dataset_id, transformation, ingest)
         add_transformation_output(db, dataset_id, transformation)
-        add_dataset_variables(db, variables, dataset_id)
+        savedataframe(db, select(variables, [] => Returns(dataset_id) => :dataset_id, :variable_id), "dataset_variables")
         #store datarows
         stmt = DBInterface.prepare(db, "INSERT INTO datarows (dataset_id) VALUES(@dataset_id);")
         for i = 1:nrow(data)
@@ -523,22 +512,6 @@ function add_data_column(db::SQLite.DB, variable_id, coldata)
     isdate = eltype(coldata.value) >: Date
     for row in eachrow(coldata)
         DBInterface.execute(stmt, (row_id=row.row_id, variable_id=variable_id, value=(isdate && !ismissing(row.value) ? Dates.format(row.value, "yyyy-mm-dd") : row.value)))
-    end
-    return nothing
-end
-"""
-    add_dataset_variables(db::SQLite.DB, variables, dataset_id)
-
-Insert dataset variables into table dataset_variables
-"""
-function add_dataset_variables(db::SQLite.DB, variables, dataset_id)
-    sql = """
-        INSERT INTO dataset_variables (dataset_id, variable_id)
-        VALUES (@dataset_id, @variable_id);
-    """
-    stmt = DBInterface.prepare(db, sql)
-    for row in eachrow(variables)
-        DBInterface.execute(stmt, (dataset_id=dataset_id, variable_id=row.variable_id))
     end
     return nothing
 end
@@ -622,9 +595,17 @@ function dataset_in_ingest(db, dataset, ingest)
     df = DBInterface.execute(stmt, (ingest=ingest, dataset=dataset)) |> DataFrame
     return nrow(df) > 0 && df[1, :n] > 0
 end
+
+makeparam(s) = "@" * s
+
+"""
+    savedataframe(db::SQLite.DB, df::AbstractDataFrame, table)
+
+Save a DataFrame into an SQLite database, the names of the dataframe columns should be identical to the table column names in the database
+"""
 function savedataframe(db::SQLite.DB, df::AbstractDataFrame, table)
     colnames = names(df)
-    paramnames = map(s -> "@" * s, names) #add @ to column names
+    paramnames = map(makeparam, colnames) #add @ to column names
     sql = "INSERT INTO $table ($(join(colnames, ", "))) VALUES ($(join(paramnames, ", ")));"
     stmt = DBInterface.prepare(db, sql)
     for row in eachrow(df)

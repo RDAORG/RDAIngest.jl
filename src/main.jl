@@ -12,5 +12,6 @@ dotenv()
               "CHAMPS Level2 Data V4.10",
               "Ingest of CHAMPS de-identified data", "ingest_champs in RDAIngest.jl",
               "Kobus Herbst",
-              "Raw data from CHAMPS level 2 release, categorical variables not encoded using vocabularies")
+              "Raw data from CHAMPS level 2 release, categorical variables not encoded using vocabularies",
+              ENV["DATA_DICTIONARY_PATH"])
 
