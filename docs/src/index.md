@@ -4,7 +4,7 @@ CurrentModule = RDAIngest
 
 # RDAIngest
 
-Documentation for [RDAIngest](https://github.com/kobusherbst/RDAIngest.jl).
+Documentation for [RDAIngest](https://github.com/RDAORG/RDAIngest.jl).
 
 ## Functions
 

@@ -10,13 +10,12 @@ The current version of **RDAIngest.jl** can ingest the *Level 2: De-identified d
 
 See the [`ingest_champs`](@ref) function.
 
-### Database Structure
+## Database Structure
 
 The conceptual model of the *Reference Death Archive* is shown in Figure 1.
-![Fig 1: RDA Conceptual Model](RDA_Conceptual_Model.svg)
+![Fig 1: RDA Conceptual Model](RDA_Conceptual_Model.png)
 
-#### Data sources
-
+### Data sources
 The origin of the data is described in the following tables:
 
 | Table Name              | Description                                                                   |
@@ -24,8 +23,7 @@ The origin of the data is described in the following tables:
 | sources                 | The entity responsible for distributing the data                              |
 | sites                   | The surveillance site whre the data collection (or death) occured             |
 
-#### Data collection
-
+### Data collection
 The data collection protocol and ethical approval are described in the following tables:
 
 | Table Name              | Description                                                                   |
@@ -36,8 +34,7 @@ The data collection protocol and ethical approval are described in the following
 | ethics                  | An ethics approval for data collection                                        |
 | ethics_documents        | Documents describing the ethical approval                                     |
 
-#### Data collection instruments
-
+### Data collection instruments
 The data collection instruments are described in the following tables:
 
 | Table Name              | Description                                                                   |
@@ -47,8 +44,7 @@ The data collection instruments are described in the following tables:
 | protocol_instruments    | The instruments covered by a particular protocol                              |
 | instrument_datasets     | Datasets collected by this instrument                                         |
 
-#### Data ingest
-
+### Data ingest
 An instance of a data ingest into the *Reference Death Archive* is described by the following tables:
 
 | Table Name              | Description                                                                   |
@@ -61,8 +57,7 @@ An instance of a data ingest into the *Reference Death Archive* is described by 
 | transformation_inputs   | The dataset/s consumed by the transformation for a dataset transformation     |
 | transformation_outputs  | The dataset/s produced by the transformation                                  |
 
-#### Data
-
+### Data
 The data itself is contained in the following tables:
 
 | Table Name              | Description                                                                   |
@@ -72,7 +67,7 @@ The data itself is contained in the following tables:
 | data                    | A variable - value pair for each variable in each row of the dataset          |
 | dataset_variables       | The variables representing each column in the dataset                         |
 
-#### Variables
+### Variables
 The variables representing the data contained in the dataset, is described by the following tables:
 
 | Table Name              | Description                                                                   |
@@ -85,7 +80,6 @@ The variables representing the data contained in the dataset, is described by th
 | vocabulary_mapping      | The items of one vocabulary can be mapped to another vocabulary               |
 
 In the case of the CHAMPS data, the data dictionaries are manually extracted from the data distribution document and saved as csv files in the RDA repository.
-
 The format of the file is (the field separator is a semi-colon):
  * `Column_Name`: The variable name
  * `Key` : `Yes` if the variable is a key to the data

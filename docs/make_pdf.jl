@@ -8,12 +8,7 @@ makedocs(;
     authors="Kobus Herbst<kobus.herbst@ahri.org>",
     repo="https://github.com/RDAORG/RDAIngest.jl/blob/{commit}{path}#{line}",
     sitename="RDAIngest.jl",
-    format=Documenter.HTML(;
-        prettyurls=get(ENV, "CI", "false") == "true",
-        canonical="https://kobusherbst.github.io/RDAIngest.jl",
-        edit_link="main",
-        assets=String[],
-    ),
+    format=Documenter.LaTeX(),
     pages=[
         "Introduction" => "introduction.md",
         "Functions" => "index.md",
@@ -23,5 +18,5 @@ makedocs(;
 deploydocs(;
     repo="github.com/RDAORG/RDAIngest.jl",
     devbranch="main",
-    push_preview = true,
+    push_preview=true
 )
