@@ -394,7 +394,7 @@ end
 
 Save the CHAMPS variables, including vocabularies for categorical variables.
 !!! note
-    Ingested data is not checked to ensure that categorical variable values conform to the vocabulary, in fect in the provided data thre are deviations, mostly in letter case. Common categries, such as the verbal autopsy indicators are also not converted to categorical values.
+    Ingested data is not checked to ensure that categorical variable values conform to the vocabulary, in fact in the provided data there are deviations, mostly in letter case. Common categories, such as the verbal autopsy indicators are also not converted to categorical values.
 """
 function add_champs_variables(db::SQLite.DB, path::String, dictionary::String)
     domain = getdomain(db, "CHAMPS")
