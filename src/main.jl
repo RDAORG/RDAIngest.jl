@@ -3,6 +3,7 @@ using RDAIngest
 using DBInterface
 using DataFrames
 using Dates
+using BenchmarkTools
 
 #get environment variables
 dotenv()
