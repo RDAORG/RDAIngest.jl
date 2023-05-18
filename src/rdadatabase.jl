@@ -1,10 +1,11 @@
+import DBInterface: executemultiple
 """
     createdatabase(path, name)
 
 Creates a SQLite database to store the information contained in the Reference Death Archive (RDA)
 """
-function createdatabase(path, name; replace=false)
-    file = joinpath(path, "$name.sqlite")
+function createdatabase(path, name; replace=false, type="sqlite")
+    file = joinpath(path, "$name.$type")
     existed = isfile(file)
     if existed && !replace
         error("Database '$file' already exists.")
@@ -16,22 +17,31 @@ function createdatabase(path, name; replace=false)
     if !existed && !isdir(path)
         mkpath(path)
     end
-    db = SQLite.DB(file)
-    createsources(db)
-    createprotocols(db)
-    createtransformations(db)
-    createvariables(db)
-    createdatasets(db)
-    createinstruments(db)
-    createdeaths(db)
-    close(db)
+    if lowercase(type) == "sqlite"
+        global db = SQLite.DB(file)
+    elseif lowercase(type) == "duckdb"
+        global db = DuckDB.open(file)
+    else
+        error("'$type' is an unknown database type")
+    end
+    try
+        createsources(db)
+        # createprotocols(db)
+        # createtransformations(db)
+        # createvariables(db)
+        # createdatasets(db)
+        # createinstruments(db)
+        # createdeaths(db)
+    finally
+      close(db)
+    end
 end
 """
-    opendatabase(path::String, name::String)::SQLite.DB
+    opendatabase(path::String, name::String)::DBInterface.Connection
 
 Open file on path as an SQLite database (assume .sqlite extension)
 """
-function opendatabase(path::String, name::String)::SQLite.DB
+function opendatabase(path::String, name::String)::DBInterface.Connection
     file = joinpath(path, "$name.sqlite")
     if isfile(file)
         return SQLite.DB(file)
@@ -41,53 +51,82 @@ function opendatabase(path::String, name::String)::SQLite.DB
 end
 
 """
-    get_table(db::SQLite.DB, table::String)::AbstractDataFrame
+    get_table(db::DBInterface.Connection, table::String)::AbstractDataFrame
 
 Retrieve table `table` as a DataFrame from `db`
 """
-function get_table(db::SQLite.DB, table::String)::AbstractDataFrame
+function get_table(db::DBInterface.Connection, table::String)::AbstractDataFrame
     sql = "SELECT * FROM $(table)"
     df = DBInterface.execute(db, sql; iterate_rows=true) |> DataFrame
     return df
 end
+function executemultiple(db::DuckDB.DB, sql::String)
+    s_array = split(sql, ';', keepempty=false)
+    for s in s_array
+        DBInterface.execute(db, s)
+    end
+end
 """
-    createsources(db::SQLite.DB)
+    createsources(db::DBInterface.Connection)
 
 Creates tables to record a source and associated site/s for deaths contributed to the RDA
 """
-function createsources(db::SQLite.DB)
-    sql = raw"""
+function createsources(db)
+    executemultiple(db, sourcesql(db))
+    executemultiple(db, sitesql(db))
+end
+function sourcesql(db::SQLite.DB)
+    return raw"""
     CREATE TABLE "sources" (
     "source_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "name" TEXT NOT NULL
     );
     """
-    DBInterface.execute(db, sql)
-    sql = raw"""
+end
+function sourcesql(db::DuckDB.DB)
+    return raw"""
+    CREATE SEQUENCE seq_source_id START 1;
+    CREATE TABLE "sources" (
+    "source_id" INTEGER PRIMARY KEY DEFAULT NEXTVAL('seq_source_id'),
+    "name" TEXT NOT NULL
+    );
+    """
+end
+function sitesql(db::SQLite.DB)
+    return raw"""
     CREATE TABLE "sites" (
     "site_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "name" TEXT NOT NULL,
     "site_iso_code" TEXT NOT NULL,
     "source_id" INTEGER NOT NULL,
-    CONSTRAINT "fk_sites_source_id" FOREIGN KEY ("source_id") REFERENCES "sources" ("source_id") ON DELETE CASCADE ON UPDATE NO ACTION
+    CONSTRAINT "fk_sites_source_id" FOREIGN KEY ("source_id") 
+      REFERENCES "sources" ("source_id") ON DELETE CASCADE ON UPDATE NO ACTION
     );
-    """
-    DBInterface.execute(db, sql)
-    sql = raw"""
     CREATE UNIQUE INDEX "i_source_name"
     ON "sites" (
     "source_id" ASC,
     "name" ASC
     );
     """
-    DBInterface.execute(db, sql)
+end
+function sitesql(db::DuckDB.DB)
+    return raw"""
+    CREATE SEQUENCE seq_site_id START 1;
+    CREATE TABLE "sites" (
+    "site_id" INTEGER PRIMARY KEY DEFAULT NEXTVAL('seq_site_id'),
+    "name" TEXT NOT NULL,
+    "site_iso_code" TEXT NOT NULL,
+    "source_id" INTEGER NOT NULL REFERENCES "sources" ("source_id"),
+    UNIQUE ("source_id", "name")
+     );
+    """
 end
 """
-    createprotocols(db::SQLite.DB)
+    createprotocols(db::DBInterface.Connection)
 
 Create tables to record information about protocols and the ethics approvals for those protocols
 """
-function createprotocols(db::SQLite.DB)
+function createprotocols(db::DBInterface.Connection)
     sql = raw"""
     CREATE TABLE "ethics" (
     "ethics_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -158,7 +197,7 @@ end
 
 Create tables to record data transformations and data ingests
 """
-function createtransformations(db::SQLite.DB)
+function createtransformations(db::DBInterface.Connection)
     sql = raw"""
     CREATE TABLE "transformation_types" (
     "transformation_type_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -301,11 +340,11 @@ function createvariables(db)
     SQLite.load!(types, db, "value_types")
 end
 """
-    createdatasets(db::SQLite.DB)
+    createdatasets(db::DBInterface.Connection)
 
 Create tables to record datasets, rows, data and links to the transformations that use/created the datasets
 """
-function createdatasets(db::SQLite.DB)
+function createdatasets(db::DBInterface.Connection)
     sql = raw"""
     CREATE TABLE "datasets" (
     "dataset_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -380,11 +419,11 @@ function createdatasets(db::SQLite.DB)
 
 end
 """
-    createinstruments(db::SQLite.DB)
+    createinstruments(db::DBInterface.Connection)
 
 Create tables to record data collection instruments, and their associated protocols and datasets
 """
-function createinstruments(db::SQLite.DB)
+function createinstruments(db::DBInterface.Connection)
     sql = raw"""
     CREATE TABLE "instruments" (
     "instrument_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,

@@ -8,6 +8,7 @@ using ConfigEnv
 using CSV
 using Dates
 using Arrow
+using DuckDB
 
 export opendatabase, get_table, addsource, getsource, createdatabase, getnamedkey,
     read_champs_data, add_champs_sites, add_champs_protocols, read_champs_variables,

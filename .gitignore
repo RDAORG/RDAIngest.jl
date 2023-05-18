@@ -5,3 +5,6 @@
 /docs/build/
 .env
 test*.jl
+database/RDA.duckdb
+*.wal
+*.duckdb
