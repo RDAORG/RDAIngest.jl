@@ -62,7 +62,8 @@ function get_table(db::DBInterface.Connection, table::String)::AbstractDataFrame
 end
 function executemultiple(db::DuckDB.DB, sql::String)
     s_array = split(sql, ';', keepempty=false)
-    for s in s_array
+    for i in 1:length(s_array)
+        s = s_array[i]
         DBInterface.execute(db, s)
     end
 end
