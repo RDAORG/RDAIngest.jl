@@ -12,7 +12,9 @@ using Arrow
 export opendatabase, get_table, addsource, getsource, createdatabase, getnamedkey,
     read_champs_data, add_champs_sites, add_champs_protocols, read_champs_variables,
     add_dataingest, add_transformation, ingest_champs_deaths, add_champs_variables, import_champs_dataset,
-    link_deathrows, ingest_champs, dataset_to_dataframe, dataset_to_arrow, dataset_to_csv, savedataframe
+    link_deathrows, ingest_champs, dataset_to_dataframe, dataset_to_arrow, dataset_to_csv, savedataframe,
+    ingest_champs_labtac
+
 
 struct VocabularyItem
     value::Int64
@@ -23,6 +25,44 @@ struct Vocabulary
     name::String
     description::String
     items::Vector{VocabularyItem}
+end
+
+"""
+Adding CHAMPS lab and tac
+
+ingest_champs_labtac(dbpath, dbname, datapath, ingest, transformation, code_reference, author, description)
+
+This is modified based on main ingest_champs function to ingest the laboratory or TAC results of CHAMPS Level 2 data distribution.
+
+## Parameters
+  * `dbpath        `: The file path to the database.
+  * `dbname        `: The name of the database, .sqlite extension assumed.
+  * `datapath      `: The file path to the CHAMPS data distribution, assumes the distribution is extracyed into folder `CHAMPS_de_identified_data`.
+  * `ingest        `: The description of the data ingest.
+  * `transformation`: The description of the transformation for the data ingest.
+  * `code-reference`: The reference to the code used for the transformation `function` in `package`
+  * `author        `: The transformation author
+  * `description   `: The dataset description
+  * `dictionarypath`: The path to the data dictionaries
+"""
+function ingest_champs_labtac(dbpath, dbname, datapath, ingest, transformation, code_reference, author, description, dictionarypath)
+    db = opendatabase(dbpath, dbname)
+    try
+        champs = addsource(db, "CHAMPS")
+        ingest = add_dataingest(db, champs, today(), ingest)
+        transformation = add_transformation(db, 1, 1, transformation, code_reference, today(), author)
+        add_champs_variables(db, dictionarypath, "Format_CHAMPS_deid_tac_results")
+        add_champs_variables(db, dictionarypath, "Format_CHAMPS_deid_lab_results")
+        tac_ds = import_champs_dataset(db, transformation, ingest, datapath, "CHAMPS_deid_tac_results", description)
+        lab_ds = import_champs_dataset(db, transformation, ingest, datapath, "CHAMPS_deid_lab_results", description)
+        domain = getnamedkey(db, "domains", "CHAMPS", Symbol("domain_id"))
+        death_idvar = get_variable(db, domain, "champs_deid")
+        link_deathrows(db, ingest, tac_ds, death_idvar) #CHAMPS_deid_tac_results
+        link_deathrows(db, ingest, lab_ds, death_idvar) #CHAMPS_deid_lab_results
+        return nothing
+    finally
+        close(db)
+    end
 end
 
 """
