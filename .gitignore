@@ -7,4 +7,3 @@
 test*.jl
 database/RDA.duckdb
 *.wal
-*.duckdb

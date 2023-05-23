@@ -1,4 +1,3 @@
-import DBInterface: executemultiple
 """
     createdatabase(path, name)
 
@@ -26,14 +25,20 @@ function createdatabase(path, name; replace=false, type="sqlite")
     end
     try
         createsources(db)
-        # createprotocols(db)
-        # createtransformations(db)
-        # createvariables(db)
+        createprotocols(db)
+        createtransformations(db)
+        createvariables(db)
         # createdatasets(db)
         # createinstruments(db)
         # createdeaths(db)
     finally
-      close(db)
+        if lowercase(type) == "sqlite"
+            close(db)
+        elseif lowercase(type) == "duckdb"
+            DuckDB.close_database(db)
+            close(db)
+        end
+        global db = nothing
     end
 end
 """
@@ -60,23 +65,28 @@ function get_table(db::DBInterface.Connection, table::String)::AbstractDataFrame
     df = DBInterface.execute(db, sql; iterate_rows=true) |> DataFrame
     return df
 end
-function executemultiple(db::DuckDB.DB, sql::String)
-    s_array = split(sql, ';', keepempty=false)
-    for i in 1:length(s_array)
-        s = s_array[i]
-        DBInterface.execute(db, s)
-    end
-end
 """
+    createsources(db::SQLite.DB)
+
+
     createsources(db::DBInterface.Connection)
 
 Creates tables to record a source and associated site/s for deaths contributed to the RDA
 """
-function createsources(db)
-    executemultiple(db, sourcesql(db))
-    executemultiple(db, sitesql(db))
+function createsources(db::SQLite.DB)
+    DBInterface.executemultiple(db, sourcesqlite())
+    DBInterface.executemultiple(db, sitesqlite())
+    return nothing
 end
-function sourcesql(db::SQLite.DB)
+create_seq(name) = return "CREATE SEQUENCE $name START 1;"
+function createsources(db::DuckDB.DB)
+    DBInterface.execute(db, create_seq("seq_source_id"))
+    DBInterface.execute(db, sourcesqlduck("seq_source_id"))
+    DBInterface.execute(db, create_seq("seq_site_id"))
+    DBInterface.execute(db, sitesqlduck("seq_site_id"))
+    return nothing
+end
+function sourcesqlite()
     return raw"""
     CREATE TABLE "sources" (
     "source_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -84,16 +94,15 @@ function sourcesql(db::SQLite.DB)
     );
     """
 end
-function sourcesql(db::DuckDB.DB)
-    return raw"""
-    CREATE SEQUENCE seq_source_id START 1;
+function sourcesqlduck(sequence)
+    return """
     CREATE TABLE "sources" (
-    "source_id" INTEGER PRIMARY KEY DEFAULT NEXTVAL('seq_source_id'),
+    "source_id" INTEGER PRIMARY KEY DEFAULT NEXTVAL('$sequence'),
     "name" TEXT NOT NULL
     );
     """
 end
-function sitesql(db::SQLite.DB)
+function sitesqlite()
     return raw"""
     CREATE TABLE "sites" (
     "site_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -110,11 +119,10 @@ function sitesql(db::SQLite.DB)
     );
     """
 end
-function sitesql(db::DuckDB.DB)
-    return raw"""
-    CREATE SEQUENCE seq_site_id START 1;
+function sitesqlduck(sequence)
+    return """
     CREATE TABLE "sites" (
-    "site_id" INTEGER PRIMARY KEY DEFAULT NEXTVAL('seq_site_id'),
+    "site_id" INTEGER PRIMARY KEY DEFAULT NEXTVAL('$sequence'),
     "name" TEXT NOT NULL,
     "site_iso_code" TEXT NOT NULL,
     "source_id" INTEGER NOT NULL REFERENCES "sources" ("source_id"),
@@ -127,7 +135,7 @@ end
 
 Create tables to record information about protocols and the ethics approvals for those protocols
 """
-function createprotocols(db::DBInterface.Connection)
+function createprotocols(db::SQLite.DB)
     sql = raw"""
     CREATE TABLE "ethics" (
     "ethics_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -165,9 +173,9 @@ function createprotocols(db::DBInterface.Connection)
     """
     DBInterface.execute(db, sql)
     sql = raw"""
-    CREATE UNIQUE INDEX "i_site_name"
+    CREATE UNIQUE INDEX "i_ethics_name"
     ON "protocols" (
-    "site_id" ASC,
+    "ethics_id" ASC,
     "name" ASC
     );
     """
@@ -192,13 +200,66 @@ function createprotocols(db::DBInterface.Connection)
     );
     """
     DBInterface.execute(db, sql)
+    return nothing
+end
+function createprotocols(db::DuckDB.DB)
+    DBInterface.execute(db, create_seq("seq_ethics_id"))
+    sql = """
+    CREATE TABLE "ethics" (
+    "ethics_id" INTEGER PRIMARY KEY DEFAULT NEXTVAL('seq_ethics_id'),
+    "name" TEXT NOT NULL,
+    "ethics_committee" TEXT NOT NULL,
+    "ethics_reference" TEXT NOT NULL
+    );
+    """
+    DBInterface.execute(db, sql)
+    DBInterface.execute(db, create_seq("seq_ethics_document_id"))
+    sql = raw"""
+    CREATE TABLE "ethics_documents" (
+    "ethics_document_id" INTEGER NOT NULL PRIMARY KEY DEFAULT NEXTVAL('seq_ethics_document_id'),
+    "ethics_id" INTEGER NOT NULL REFERENCES "ethics" ("ethics_id"),
+    "name" TEXT NOT NULL,
+    "document" BLOB,
+    UNIQUE ("ethics_id", "name")
+    );
+    """
+    DBInterface.execute(db, sql)
+    DBInterface.execute(db, create_seq("seq_protocol_id"))
+    sql = raw"""
+    CREATE TABLE "protocols" (
+    "protocol_id" INTEGER PRIMARY KEY DEFAULT NEXTVAL('seq_protocol_id'),
+    "name" TEXT NOT NULL,
+    "ethics_id" INTEGER REFERENCES "ethics" ("ethics_id"),
+    UNIQUE("ethics_id", "name")
+    );
+    """
+    DBInterface.execute(db, sql)
+    sql = raw"""
+    CREATE TABLE "site_protocols" (
+    "site_id" INTEGER NOT NULL REFERENCES "sites" ("site_id"),
+    "protocol_id" INTEGER NOT NULL REFERENCES "protocols" ("protocol_id"),
+    PRIMARY KEY ("site_id", "protocol_id")
+    );
+    """
+    DBInterface.execute(db, sql)
+    DBInterface.execute(db, create_seq("seq_protocol_document_id"))
+    sql = raw"""
+    CREATE TABLE "protocol_documents" (
+    "protocol_document_id" INTEGER NOT NULL PRIMARY KEY DEFAULT NEXTVAL('seq_protocol_document_id'),
+    "protocol_id" INTEGER NOT NULL REFERENCES "protocols" ("protocol_id"),
+    "name" TEXT NOT NULL,
+    "document" BLOB
+    );
+    """
+    DBInterface.execute(db, sql)
+    return nothing
 end
 """
     createtransformations(db)
 
 Create tables to record data transformations and data ingests
 """
-function createtransformations(db::DBInterface.Connection)
+function createtransformations(db::SQLite.DB)
     sql = raw"""
     CREATE TABLE "transformation_types" (
     "transformation_type_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -241,13 +302,60 @@ function createtransformations(db::DBInterface.Connection)
     statuses = DataFrame([(transformation_status_id=1, name="Unverified"), (transformation_status_id=2, name="Verified")])
     SQLite.load!(types, db, "transformation_types")
     SQLite.load!(statuses, db, "transformation_statuses")
+    return nothing
+end
+function createtransformations(db::DuckDB.DB)
+    DBInterface.execute(db, create_seq("seq_transformation_type_id"))
+    sql = raw"""
+    CREATE TABLE "transformation_types" (
+    "transformation_type_id" INTEGER NOT NULL PRIMARY KEY DEFAULT NEXTVAL('seq_transformation_type_id'),
+    "name" TEXT NOT NULL
+    );
+    """
+    DBInterface.execute(db, sql)
+    DBInterface.execute(db, create_seq("seq_transformation_status_id"))
+    sql = raw"""
+    CREATE TABLE "transformation_statuses" (
+    "transformation_status_id" INTEGER NOT NULL PRIMARY KEY DEFAULT NEXTVAL('seq_transformation_status_id'),
+    "name" TEXT NOT NULL
+    );
+    """
+    DBInterface.execute(db, create_seq("seq_transformation_id"))
+    DBInterface.execute(db, sql)
+    sql = raw"""
+    CREATE TABLE "transformations" (
+    "transformation_id" INTEGER NOT NULL PRIMARY KEY DEFAULT NEXTVAL('seq_transformation_id'),
+    "transformation_type_id" INTEGER NOT NULL REFERENCES "transformation_types" ("transformation_type_id"),
+    "transformation_status_id" INTEGER NOT NULL REFERENCES "transformation_statuses" ("transformation_status_id"),
+    "description" TEXT NOT NULL,
+    "code_reference" TEXT NOT NULL,
+    "date_created" DATE NOT NULL,
+    "created_by" TEXT NOT NULL
+    );
+    """
+    DBInterface.execute(db, create_seq("seq_data_ingestion_id"))
+    DBInterface.execute(db, sql)
+    sql = raw"""
+    CREATE TABLE "data_ingestions" (
+    "data_ingestion_id" INTEGER NOT NULL PRIMARY KEY DEFAULT NEXTVAL('seq_data_ingestion_id'),
+    "source_id" INTEGER NOT NULL REFERENCES "sources" ("source_id"),
+    "date_received" DATE NOT NULL,
+    "description" TEXT
+     );
+    """
+    DBInterface.execute(db, sql)
+    types = DataFrame([(transformation_type_id=1, name="Raw data ingest"), (transformation_type_id=2, name="Dataset transform")])
+    statuses = DataFrame([(transformation_status_id=1, name="Unverified"), (transformation_status_id=2, name="Verified")])
+    DuckDB.appendDataFrame(types, db, "transformation_types")
+    DuckDB.appendDataFrame(statuses, db, "transformation_statuses")
+    return nothing
 end
 """
     createvariables(db)
 
 Create tables to record value types, variables and vocabularies
 """
-function createvariables(db)
+function createvariables(db::SQLite.DB)
     sql = raw"""
     CREATE TABLE "value_types" (
     "value_type_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -266,7 +374,7 @@ function createvariables(db)
     sql = raw"""
     CREATE TABLE "vocabularies" (
     "vocabulary_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    "name" TEXT NOT NULL,
+    "name" TEXT NOT NULL UNIQUE,
     "description" TEXT
     );
     """
@@ -339,7 +447,91 @@ function createvariables(db)
         (value_type_id=7, value_type="Categorical", description="Category represented by a Vocabulary with integer value and string code, stored as Integer")
     ])
     SQLite.load!(types, db, "value_types")
+    return nothing
 end
+function createvariables(db::DuckDB.DB)
+    DBInterface.execute(db, create_seq("seq_value_type_id"))
+    sql = raw"""
+    CREATE TABLE "value_types" (
+    "value_type_id" INTEGER NOT NULL PRIMARY KEY DEFAULT NEXTVAL('seq_value_type_id'),
+    "value_type" TEXT NOT NULL UNIQUE,
+    "description" TEXT
+    );
+    """
+    DBInterface.execute(db, sql)
+    DBInterface.execute(db, create_seq("seq_vocabulary_id"))
+    sql = raw"""
+    CREATE TABLE "vocabularies" (
+    "vocabulary_id" INTEGER NOT NULL PRIMARY KEY DEFAULT NEXTVAL('seq_vocabulary_id'),
+    "name" TEXT NOT NULL UNIQUE,
+    "description" TEXT
+    );
+    """
+    DBInterface.execute(db, sql)
+    DBInterface.execute(db, create_seq("seq_vocabulary_item_id"))
+    sql = raw"""
+    CREATE TABLE "vocabulary_items" (
+    "vocabulary_item_id" INTEGER NOT NULL PRIMARY KEY DEFAULT NEXTVAL('seq_vocabulary_item_id'),
+    "vocabulary_id" INTEGER NOT NULL REFERENCES "vocabularies"("vocabulary_id"),
+    "value" TEXT NOT NULL,
+    "code" TEXT NOT NULL,
+    "description" TEXT
+    );
+    """
+    DBInterface.execute(db, sql)
+    DBInterface.execute(db, create_seq("seq_domain_id"))
+    sql = raw"""
+    CREATE TABLE "domains" (
+    "domain_id" INTEGER NOT NULL PRIMARY KEY DEFAULT NEXTVAL('seq_domain_id'),
+    "name" TEXT NOT NULL UNIQUE,
+    "description" TEXT NOT NULL
+    );
+    """
+    DBInterface.execute(db, sql)
+    sql = raw"""
+   CREATE TABLE "variables" (
+   "variable_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+   "domain_id" INTEGER NOT NULL,
+   "name" TEXT NOT NULL,
+   "value_type_id" INTEGER NOT NULL,
+   "vocabulary_id" INTEGER,
+   "description" TEXT,
+   "note" TEXT,
+   CONSTRAINT "fk_variables_domain_id" FOREIGN KEY ("domain_id") REFERENCES "domains"("domain_id") ON DELETE NO ACTION ON UPDATE NO ACTION,
+   CONSTRAINT "fk_variables_value_type_id" FOREIGN KEY ("value_type_id") REFERENCES "value_types"("value_type_id") ON DELETE NO ACTION ON UPDATE NO ACTION,
+   CONSTRAINT "fk_variables_vocabulary_id" FOREIGN KEY ("vocabulary_id") REFERENCES "vocabularies"("vocabulary_id") ON DELETE NO ACTION ON UPDATE NO ACTION
+   );
+   """
+    DBInterface.execute(db, sql)
+    sql = raw"""
+    CREATE UNIQUE INDEX "i_variables_domain_name"
+    ON "variables" (
+    "domain_id" ASC,
+    "name" ASC
+    );
+    """
+    DBInterface.execute(db, sql)
+    sql = raw"""
+    CREATE TABLE "vocabulary_mapping" (
+    "vocabulary_mapping_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "from_vocabulary_item" INTEGER NOT NULL,
+    "to_vocabulary_item" INTEGER NOT NULL,
+    CONSTRAINT "fk_vocabulary_mapping" FOREIGN KEY ("from_vocabulary_item") REFERENCES "vocabulary_items" ("vocabulary_item_id") ON DELETE NO ACTION ON UPDATE NO ACTION,
+    CONSTRAINT "fk_vocabulary_mapping" FOREIGN KEY ("to_vocabulary_item") REFERENCES "vocabulary_items" ("vocabulary_item_id") ON DELETE NO ACTION ON UPDATE NO ACTION
+    );
+    """
+    DBInterface.execute(db, sql)
+    types = DataFrame([(value_type_id=1, value_type="Integer", description=""),
+        (value_type_id=2, value_type="Float", description=""),
+        (value_type_id=3, value_type="String", description=""),
+        (value_type_id=4, value_type="Date", description="ISO Date yyyy-mm-dd"),
+        (value_type_id=5, value_type="Datetime", description="ISO Datetime yyyy-mm-ddTHH:mm:ss.sss"),
+        (value_type_id=6, value_type="Time", description="ISO Time HH:mm:ss.sss"),
+        (value_type_id=7, value_type="Categorical", description="Category represented by a Vocabulary with integer value and string code, stored as Integer")
+    ])
+    SQLite.load!(types, db, "value_types")
+end
+
 """
     createdatasets(db::DBInterface.Connection)
 

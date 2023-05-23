@@ -6,7 +6,7 @@ using DuckDB
 #get environment variables
 dotenv()
 
-createdatabase(ENV["RDA_DATABASE_PATH"], "RDA", replace=true, type = "duckdb")
+createdatabase(ENV["RDA_DATABASE_PATH"], "RDA", replace=true, type = "sqlite")
 # @time ingest_champs(ENV["RDA_DATABASE_PATH"], "RDA", ENV["DATA_INGEST_PATH"],
 #     "CHAMPS Level2 Data V4.10",
 #     "Ingest of CHAMPS de-identified data", "ingest_champs in RDAIngest.jl",

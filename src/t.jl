@@ -2,20 +2,20 @@ using DataFrames
 using DuckDB
 using DBInterface
 
-function sourcesql()
-    return raw"""
-    CREATE SEQUENCE seq_source_id START 1;
+create_seq(name) = return "CREATE SEQUENCE $name START 1;"
+
+function sourcesql(sequence)
+    return """
     CREATE TABLE "sources" (
-    "source_id" INTEGER PRIMARY KEY DEFAULT NEXTVAL('seq_source_id'),
+    "source_id" INTEGER PRIMARY KEY DEFAULT NEXTVAL('$sequence'),
     "name" TEXT NOT NULL
     );
     """
 end
-function sitesql()
-    return raw"""
-    CREATE SEQUENCE seq_site_id START 1;
+function sitesql(sequence)
+    return """
     CREATE TABLE "sites" (
-    "site_id" INTEGER PRIMARY KEY DEFAULT NEXTVAL('seq_site_id'),
+    "site_id" INTEGER PRIMARY KEY DEFAULT NEXTVAL('$sequence'),
     "name" TEXT NOT NULL,
     "site_iso_code" TEXT NOT NULL,
     "source_id" INTEGER NOT NULL REFERENCES "sources" ("source_id"),
@@ -23,11 +23,16 @@ function sitesql()
      );
     """
 end
-
-db = DuckDB.open("D:\\Temp\\test.duckdb")
+file = "D:\\Temp\\test.duckdb"
+rm(file)
+db = DuckDB.open(file)
 try
-    DuckDB.execute(db, sourcesql())
-    DuckDB.execute(db, sitesql())
+    DBInterface.execute(db, create_seq("seq_source_id"))
+    DBInterface.execute(db, sourcesql("seq_source_id"))
+    DBInterface.execute(db, create_seq("seq_site_id"))
+    DBInterface.execute(db, sitesql("seq_site_id"))
 finally
     DuckDB.close(db)
+    global db = nothing
+    GC.gc() #to ensure database file is released
 end
