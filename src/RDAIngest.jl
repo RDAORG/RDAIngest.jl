@@ -13,7 +13,10 @@ export opendatabase, get_table, addsource, getsource, createdatabase, getnamedke
     read_champs_data, add_champs_sites, add_champs_protocols, read_champs_variables,
     add_dataingest, add_transformation, ingest_champs_deaths, add_champs_variables, import_champs_dataset,
     link_deathrows, ingest_champs, dataset_to_dataframe, dataset_to_arrow, dataset_to_csv, savedataframe,
-    ingest_champs_labtac
+    ingest_champs_labtac,
+    ingest_comsa, read_comsa_data, add_comsa_sites, ingest_comsa_deaths, add_comsa_variables, read_comsa_variables,
+    get_comsa_vocabulary, import_comsa_dataset
+
 
 
 struct VocabularyItem
@@ -26,6 +29,239 @@ struct Vocabulary
     description::String
     items::Vector{VocabularyItem}
 end
+
+
+"""
+   ingest_comsa(dbpath, dbname, datapath, ingest, transformation, code_reference, author, description)
+
+This is the main function to ingest a COMSA Level 2 data distribution. 
+    The current version only ingest VA results version 20230308, accessed 20230522.
+
+## Parameters
+  * `dbpath        `: The file path to the database.
+  * `dbname        `: The name of the database, .sqlite extension assumed.
+  * `datapath      `: The file path to the CHAMPS data distribution, assumes the distribution is extracyed into folder `CHAMPS_de_identified_data`.
+  * `ingest        `: The description of the data ingest.
+  * `transformation`: The description of the transformation for the data ingest.
+  * `code-reference`: The reference to the code used for the transformation `function` in `package`
+  * `author        `: The transformation author
+  * `description   `: The dataset description
+  * `dictionarypath`: The path to the data dictionaries
+
+"""
+
+function ingest_comsa(dbpath, dbname, datapath, ingest, transformation, code_reference, author, description, dictionarypath)
+    db = opendatabase(dbpath, dbname)
+    try
+        comsa = addsource(db, "COMSA")
+        
+        add_comsa_sites(db, datapath)
+        println("Completed adding sites")
+
+        ingest = add_dataingest(db, comsa, today(), ingest)
+        transformation = add_transformation(db, 1, 1, transformation, code_reference, today(), author)
+        
+        ingest_comsa_deaths(db, ingest, datapath)
+        println("Completed ingesting deaths")
+        
+        add_comsa_variables(db, dictionarypath, "Format_Comsa_WHO_VA_20230308")
+        println("Completed adding variables")
+        
+        va_ds = import_comsa_dataset(db, transformation, ingest, datapath, "COMSA_WHO_VA_20230308", description)
+        println("Completed importing VA")
+        
+        domain = getnamedkey(db, "domains", "COMSA", Symbol("domain_id"))
+        death_idvar = get_variable(db, domain, "comsa_id")
+        link_deathrows(db, ingest, va_ds, death_idvar) 
+        println("Completed linking death rows")
+
+        return nothing
+    finally
+        close(db)
+    end
+end
+
+"""
+    read_comsa_data(path, name)::AbstractDataFrame
+
+Returns a DataFrame with the COMSA data, from de-identified COMSA data collection
+"""
+function read_comsa_data(path, name)::AbstractDataFrame
+    file = joinpath(path, "COMSA", "COMSA_de_identified_data", "$name.csv")
+    if !isfile(file)
+        error("File '$file' not found.")
+    else
+        df = CSV.File(file; delim=',', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
+        return df
+    end
+end
+
+"""
+    add_comsa_sites(db::SQLite.DB, datapath)
+
+Add the COMSA sites - provinces in Mozambique
+"""
+function add_comsa_sites(db::SQLite.DB, datapath)
+    df = read_comsa_data(datapath, "Comsa_WHO_VA_20230308")
+    sites = combine(groupby(df, :provincia), nrow => :n)
+    source = getsource(db, "COMSA")
+    insertcols!(sites, 1, :source_id => source)
+    select!(sites, :provincia => ByRow(x -> string("Mozambique:",x)) => :name, 
+    :provincia => :site_iso_code, #!!! match to column named site_iso_code in sites dataframe
+    :source_id)
+    replace!(sites.name, "Mozambique:"  => "Mozambique:NA")
+    savedataframe(db, sites, "sites")
+    return nothing
+end
+
+"""
+    ingest_comsa_deaths(db::SQLite.DB, ingest::Int64, path::String)
+
+INSERT COMSA VA deaths to deaths table. 
+"""
+function ingest_comsa_deaths(db::SQLite.DB, ingest::Int64, path::String)
+    deaths = read_comsa_data(path, "Comsa_WHO_VA_20230308")
+    sites = DBInterface.execute(db, "SELECT * FROM sites WHERE source_id = $(getsource(db, "COMSA"));") |> DataFrame
+    sites[!,:provincia] = sites.site_iso_code #!!! match to column named site_iso_code in sites dataframe 
+    sitedeaths = innerjoin(deaths, sites, on=:provincia, matchmissing=:notequal)
+    savedataframe(db, select(sitedeaths, :site_id, :comsa_id => :external_id, [] => Returns(ingest) => :data_ingestion_id, copycols=false), "deaths")
+    return nothing
+end
+
+
+"""
+    add_comsa_variables(db::SQLite.DB, path::String)
+
+Save the COMSA variables, including vocabularies for categorical variables.
+
+"""
+function add_comsa_variables(db::SQLite.DB, path::String, dictionary::String)
+    domain = getdomain(db, "COMSA")
+    if ismissing(domain)  # insert COMSA domain
+        domain = DBInterface.lastrowid(DBInterface.execute(db, "INSERT INTO domains(name,description) VALUES('COMSA','COMSA Data')"))
+    end
+    # start with basic demographic data
+    variables = read_comsa_variables(joinpath(path, "COMSA"), dictionary)
+    insertcols!(variables, 1, :domain_id => domain)
+    #variable insert SQL
+    sql = """
+    INSERT INTO variables (domain_id, name, value_type_id, vocabulary_id, description, note)
+    VALUES (@domain_id, @name, @value_type_id, @vocabulary_id, @description, @note)
+    ON CONFLICT DO UPDATE
+      SET vocabulary_id = excluded.vocabulary_id,
+          description = excluded.description,
+          note = excluded.note 
+      WHERE variables.vocabulary_id IS NULL OR variables.description IS NULL OR variables.note IS NULL;
+    """
+    stmt = DBInterface.prepare(db, sql)
+    for row in eachrow(variables)
+        id = missing
+        if !ismissing(row.Vocabulary)
+            id = add_vocabulary(db, row.Vocabulary)
+        end
+        DBInterface.execute(stmt, (domain_id=row.domain_id, name=row.Column_Name, value_type_id=row.DataType, vocabulary_id=id, description=row.Description, note=row.Note))
+    end
+    return nothing
+end
+
+
+"""
+    read_comsa_variables(path, file)
+
+Read a csv file listing variables variables in a COMSA dataset, the files are:
+  1. 'Format_Comsa_WHO_VA_20230308.csv' variables in the verbal autopsy dataset
+
+These files are manually created from the 'COMSA De-Identified Data Set Description v4.2.pdf' file distributed with the COMSA de-identified dataset by exporting the pdf to an Excel spreadsheet and manually extracting the variable lists as csv files.
+"""
+function read_comsa_variables(path, file)
+    file = joinpath(path, "$file.csv")
+    if !isfile(file)
+        error("File '$file' not found.")
+    else
+        df = CSV.File(file; delim=';', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
+        vocabularies = Vector{Union{Vocabulary,Missing}}()
+        for row in eachrow(df)
+            l = lines(row.Description)
+            if length(l) > 1
+                push!(vocabularies, get_comsa_vocabulary(row.Column_Name, l))
+                row.Description = l[1]
+            else
+                push!(vocabularies, missing)
+            end
+        end
+        df.Vocabulary = vocabularies
+        return df
+    end
+end
+
+
+"""
+    get_comsa_vocabulary(variable, l)::Vocabulary
+
+Get a vocabulary, name of vocabulary in line 1 of l, vocabulary items (code and description) in subsequent lines, comma-separated
+"""
+function get_comsa_vocabulary(name, l)::Vocabulary
+    items = Vector{VocabularyItem}()
+    description = ""
+    for i in eachindex(l)
+        if i == 1
+            description = l[i]
+        else
+            item = split(l[i], ',')
+            push!(items, length(item) > 1 ? VocabularyItem(i - 1, item[1], item[2]) : VocabularyItem(i - 1, item[1], missing))
+        end
+    end
+    return Vocabulary(name, description, items)
+end
+
+
+"""
+    import_comsa_dataset(db::SQLite.DB, transformation, ingest, path, dataset_name)
+
+Insert dataset, datarows, and data into SQLite db and returns the datatset_id
+"""
+function import_comsa_dataset(db::SQLite.DB, transformation, ingest, path, dataset_name, description)::Int64
+    try
+        SQLite.transaction(db)
+        data = read_comsa_data(path, dataset_name)
+        variables = lookup_variables(db, names(data), getnamedkey(db, "domains", "COMSA", "domain_id"))
+        var_lookup = Dict{String,Int64}(zip(variables.name, variables.variable_id))
+        sql = """
+        INSERT INTO datasets(name, date_created, description) 
+        VALUES (@name, @date_created, @description);
+        """
+        stmt = DBInterface.prepare(db, sql)
+        dataset_id = DBInterface.lastrowid(DBInterface.execute(stmt, (name=dataset_name, date_created=Dates.format(today(), "yyyy-mm-dd"), description=description)))
+        add_dataset_ingest(db, dataset_id, transformation, ingest)
+        add_transformation_output(db, dataset_id, transformation)
+        savedataframe(db, select(variables, [] => Returns(dataset_id) => :dataset_id, :variable_id), "dataset_variables")
+        #store datarows
+        stmt = DBInterface.prepare(db, "INSERT INTO datarows (dataset_id) VALUES(@dataset_id);")
+        for i = 1:nrow(data)
+            DBInterface.execute(stmt, (dataset_id = dataset_id))
+        end
+        #prepare data for storage
+        datarows = DBInterface.execute(db, "SELECT row_id FROM datarows WHERE dataset_id = $dataset_id;") |> DataFrame
+        d = hcat(datarows, data, makeunique=true, copycols=false) #add the row_id to each row of data
+        #store whole column at a time
+        for col in propertynames(data)
+            variable_id = var_lookup[string(col)]
+            coldata = select(d, :row_id, col => :value; copycols=false)
+            add_data_column(db, variable_id, coldata)
+        end
+        SQLite.commit(db)
+        return dataset_id
+    catch e
+        SQLite.rollback(db)
+        throw(e)
+    end
+end
+
+
+"""
+!!! NEW UPDATES BEFORE THIS LINE
+"""
+
 
 """
 Adding CHAMPS lab and tac
