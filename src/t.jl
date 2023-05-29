@@ -24,15 +24,18 @@ function sitesql(sequence)
     """
 end
 file = "D:\\Temp\\test.duckdb"
-rm(file)
-db = DuckDB.open(file)
+if isfile(file)
+    rm(file)
+end
+db = DBInterface.connect(DuckDB.DB, file)
 try
     DBInterface.execute(db, create_seq("seq_source_id"))
     DBInterface.execute(db, sourcesql("seq_source_id"))
     DBInterface.execute(db, create_seq("seq_site_id"))
     DBInterface.execute(db, sitesql("seq_site_id"))
+    DBInterface.close!(db)
 finally
-    DuckDB.close(db)
+    DBInterface.close!(db)
     global db = nothing
     GC.gc() #to ensure database file is released
 end

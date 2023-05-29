@@ -58,8 +58,8 @@ This is the main function to ingest a CHAMPS Level 2 data distribution. The curr
 9. The CHAMPS deaths are linked to the dataset rows containing the detail data about each death in the CHAMPS data distribution, using the function [`link_deathrows`](@ref)
 
 """
-function ingest_champs(dbpath, dbname, datapath, ingest, transformation, code_reference, author, description, dictionarypath)
-    db = opendatabase(dbpath, dbname)
+function ingest_champs(dbpath, dbname, datapath, ingest, transformation, code_reference, author, description, dictionarypath; type = "sqlite")
+    db = opendatabase(dbpath, dbname, type = type)
     try
         champs = addsource(db, "CHAMPS")
         add_champs_sites(db, datapath)
@@ -84,11 +84,11 @@ function ingest_champs(dbpath, dbname, datapath, ingest, transformation, code_re
     end
 end
 """
-    dataset_to_dataframe(db::SQLite.DB, dataset)::AbstractDataFrame
+    dataset_to_dataframe(db::DBInterface.Connection, dataset)::AbstractDataFrame
 
 Return a dataset with id `dataset` as a DataFrame in the wide format
 """
-function dataset_to_dataframe(db::SQLite.DB, dataset)::AbstractDataFrame
+function dataset_to_dataframe(db::DBInterface.Connection, dataset)::AbstractDataFrame
     sql = """
     SELECT
         d.row_id,
@@ -189,20 +189,20 @@ function get_variable(db, domain, name)
     end
 end
 """
-    getsource(db::SQLite.DB, name)
+    getsource(db::DBInterface.Connection, name)
 
 Return the `source_id` of source `name`, returns `missing` if source doesn't exist
 """
-function getsource(db::SQLite.DB, name)
+function getsource(db::DBInterface.Connection, name)
     return getnamedkey(db, "sources", name, Symbol("source_id"))
 end
 
 """
-    addsource(db::SQLite.DB, name)
+    addsource(db::DBInterface.Connection, name)
 
 Add source `name` to the sources table, and returns the `source_id`
 """
-function addsource(db::SQLite.DB, name)
+function addsource(db::DBInterface.Connection, name)
     id = getsource(db, name)
     if ismissing(id)  # insert CHAMPS domain
         stmt = DBInterface.prepare(db, "INSERT INTO sources (name) VALUES (@name)")
@@ -226,11 +226,11 @@ function read_champs_data(path, name)::AbstractDataFrame
 end
 
 """
-    add_champs_sites(db::SQLite.DB, datapath)
+    add_champs_sites(db::DBInterface.Connection, datapath)
 
 Add the CHAMPS sites - note, actual CHAMP sites not know - sites are just the countries the sites are in
 """
-function add_champs_sites(db::SQLite.DB, datapath)
+function add_champs_sites(db::DBInterface.Connection, datapath)
     df = read_champs_data(datapath, "CHAMPS_deid_basic_demographics")
     sites = combine(groupby(df, :site_iso_code), nrow => :n)
     source = getsource(db, "CHAMPS")
@@ -241,11 +241,11 @@ function add_champs_sites(db::SQLite.DB, datapath)
 end
 
 """
-    add_champs_protocols(db::SQLite.DB, datapath)
+    add_champs_protocols(db::DBInterface.Connection, datapath)
 
 Add the CHAMPS Mortality Surveillance and Social Behavioural Science protocols
 """
-function add_champs_protocols(db::SQLite.DB, datapath)
+function add_champs_protocols(db::DBInterface.Connection, datapath)
     sql = raw"""
     INSERT INTO protocols (name) VALUES (@name)
     """
@@ -332,11 +332,11 @@ function get_champs_vocabulary(name, l)::Vocabulary
 end
 
 """
-    add_dataingest(db::SQLite.DB, source_id::Int64, date::Date, description::String)::Int64
+    add_dataingest(db::DBInterface.Connection, source_id::Int64, date::Date, description::String)::Int64
 
 Insert a data ingestion into the data_ingestions table and return the data_ingestion_id
 """
-function add_dataingest(db::SQLite.DB, source_id::Int64, date::Date, description::String)::Int64
+function add_dataingest(db::DBInterface.Connection, source_id::Int64, date::Date, description::String)::Int64
     sql = """
     INSERT INTO data_ingestions (source_id, date_received, description)
     VALUES (@source_id, @date, @description)
@@ -351,11 +351,11 @@ function add_dataingest(db::SQLite.DB, source_id::Int64, date::Date, description
     end
 end
 """
-    add_transformation(db::SQLite.DB, type::Int64, status::Int64, description::String, code_reference::String, date_created::Date, created_by::String)
+    add_transformation(db::DBInterface.Connection, type::Int64, status::Int64, description::String, code_reference::String, date_created::Date, created_by::String)
 
 Add a transformation to the transformations table
 """
-function add_transformation(db::SQLite.DB, type::Int64, status::Int64, description::String, code_reference::String, date_created::Date, created_by::String)
+function add_transformation(db::DBInterface.Connection, type::Int64, status::Int64, description::String, code_reference::String, date_created::Date, created_by::String)
     sql = """
     INSERT INTO transformations (transformation_type_id, transformation_status_id, description, code_reference, date_created, created_by)
     VALUES (@type, @status, @description, @code_reference, @date_created, @created_by)
@@ -370,11 +370,11 @@ function add_transformation(db::SQLite.DB, type::Int64, status::Int64, descripti
     end
 end
 """
-    ingest_champs_deaths(db::SQLite.DB, ingest::Int64, path::String)
+    ingest_champs_deaths(db::DBInterface.Connection, ingest::Int64, path::String)
 
 INSERT CHAMPS deaths into the deaths table, for a specified data ingest. 
 """
-function ingest_champs_deaths(db::SQLite.DB, ingest::Int64, path::String)
+function ingest_champs_deaths(db::DBInterface.Connection, ingest::Int64, path::String)
     deaths = read_champs_data(path, "CHAMPS_deid_basic_demographics")
     sites = DBInterface.execute(db, "SELECT * FROM sites WHERE source_id = $(getsource(db, "CHAMPS"));") |> DataFrame
     sitedeaths = innerjoin(deaths, sites, on=:site_iso_code, matchmissing=:notequal)
@@ -382,22 +382,22 @@ function ingest_champs_deaths(db::SQLite.DB, ingest::Int64, path::String)
     return nothing
 end
 """
-    getdomain(db::SQLite.DB, domainname)
+    getdomain(db::DBInterface.Connection, domainname)
 
 Return the domain_id for domain named `domainname`
 """
-function getdomain(db::SQLite.DB, domainname)
+function getdomain(db::DBInterface.Connection, domainname)
     return getnamedkey(db, "domains", domainname, Symbol("domain_id"))
 end
 
 """
-    add_champs_variables(db::SQLite.DB, path::String)
+    add_champs_variables(db::DBInterface.Connection, path::String)
 
 Save the CHAMPS variables, including vocabularies for categorical variables.
 !!! note
     Ingested data is not checked to ensure that categorical variable values conform to the vocabulary, in fact in the provided data there are deviations, mostly in letter case. Common categories, such as the verbal autopsy indicators are also not converted to categorical values.
 """
-function add_champs_variables(db::SQLite.DB, path::String, dictionary::String)
+function add_champs_variables(db::DBInterface.Connection, path::String, dictionary::String)
     domain = getdomain(db, "CHAMPS")
     if ismissing(domain)  # insert CHAMPS domain
         domain = DBInterface.lastrowid(DBInterface.execute(db, "INSERT INTO domains(name,description) VALUES('CHAMPS','CHAMPS Level2 Data')"))
@@ -426,11 +426,11 @@ function add_champs_variables(db::SQLite.DB, path::String, dictionary::String)
     return nothing
 end
 """
-    add_vocabulary(db::SQLite.DB, vocabulary::Vocabulary)
+    add_vocabulary(db::DBInterface.Connection, vocabulary::Vocabulary)
 
 Insert a vocabulary and its items into a RDA database, returns the vocabulary_id of the inserted vocabulary
 """
-function add_vocabulary(db::SQLite.DB, vocabulary::Vocabulary)
+function add_vocabulary(db::DBInterface.Connection, vocabulary::Vocabulary)
     id = getnamedkey(db, "vocabularies", vocabulary.name, "vocabulary_id")
     if !ismissing(id)
         return id
@@ -459,11 +459,11 @@ function add_vocabulary(db::SQLite.DB, vocabulary::Vocabulary)
     return id
 end
 """
-    import_champs_dataset(db::SQLite.DB, transformation, ingest, path, dataset_name)
+    import_champs_dataset(db::DBInterface.Connection, transformation, ingest, path, dataset_name)
 
 Insert dataset, datarows, and data into SQLite db and returns the datatset_id
 """
-function import_champs_dataset(db::SQLite.DB, transformation, ingest, path, dataset_name, description)::Int64
+function import_champs_dataset(db::DBInterface.Connection, transformation, ingest, path, dataset_name, description)::Int64
     try
         SQLite.transaction(db)
         data = read_champs_data(path, dataset_name)
@@ -500,11 +500,11 @@ function import_champs_dataset(db::SQLite.DB, transformation, ingest, path, data
     end
 end
 """
-    add_data_column(db::SQLite.DB, variable_id, coldata)
+    add_data_column(db::DBInterface.Connection, variable_id, coldata)
 
 Insert data for a column of the source dataset
 """
-function add_data_column(db::SQLite.DB, variable_id, coldata)
+function add_data_column(db::DBInterface.Connection, variable_id, coldata)
     sql = """
         INSERT INTO data (row_id, variable_id, value)
         VALUES (@row_id, @variable_id, @value)
@@ -517,11 +517,11 @@ function add_data_column(db::SQLite.DB, variable_id, coldata)
     return nothing
 end
 """
-    lookup_variables(db::SQLite.DB, variable_names, domain)
+    lookup_variables(db::DBInterface.Connection, variable_names, domain)
 
 Returns a DataFrame with dataset variable names and ids
 """
-function lookup_variables(db::SQLite.DB, variable_names, domain)
+function lookup_variables(db::DBInterface.Connection, variable_names, domain)
     names = DataFrame(:name => variable_names)
     sql = """
     SELECT name, variable_id FROM variables
@@ -536,7 +536,7 @@ end
 
 Record a dataset ingest into ingest_datasets
 """
-function add_dataset_ingest(db::SQLite.DB, dataset_id, transformation, ingest)
+function add_dataset_ingest(db::DBInterface.Connection, dataset_id, transformation, ingest)
     sql = """
     INSERT INTO ingest_datasets (data_ingestion_id, transformation_id, dataset_id)
     VALUES (@data_ingestion_id, @transformation_id, @dataset_id);
@@ -550,7 +550,7 @@ end
 
 Add a transformation output dataset
 """
-function add_transformation_output(db::SQLite.DB, dataset_id, transformation)
+function add_transformation_output(db::DBInterface.Connection, dataset_id, transformation)
     sql = """
     INSERT INTO transformation_outputs (transformation_id, dataset_id)
     VALUES (@transformation_id, @dataset_id);
@@ -561,12 +561,12 @@ function add_transformation_output(db::SQLite.DB, dataset_id, transformation)
 end
 
 """
-    link_deathrows(db::SQLite.DB, transformation, ingest, dataset_id, death_identifier, identifier_domain)
+    link_deathrows(db::DBInterface.Connection, transformation, ingest, dataset_id, death_identifier, identifier_domain)
 
 Insert records into `deathrows` table to link dataset `dataset_id` to `deaths` table. Limited to a specific ingest.
 `death_identifier` is the variable in the dataset that corresponds to the `external_id` of the death.
 """
-function link_deathrows(db::SQLite.DB, ingest, dataset, death_identifier)
+function link_deathrows(db::DBInterface.Connection, ingest, dataset, death_identifier)
     if !dataset_in_ingest(db, dataset, ingest)
         error("Dataset $dataset not part of data ingest $ingest")
     end
@@ -600,11 +600,11 @@ end
 makeparam(s) = "@" * s
 
 """
-    savedataframe(db::SQLite.DB, df::AbstractDataFrame, table)
+    savedataframe(db::DBInterface.Connection, df::AbstractDataFrame, table)
 
 Save a DataFrame into an SQLite database, the names of the dataframe columns should be identical to the table column names in the database
 """
-function savedataframe(db::SQLite.DB, df::AbstractDataFrame, table)
+function savedataframe(db::DBInterface.Connection, df::AbstractDataFrame, table)
     colnames = names(df)
     paramnames = map(makeparam, colnames) #add @ to column names
     sql = "INSERT INTO $table ($(join(colnames, ", "))) VALUES ($(join(paramnames, ", ")));"
