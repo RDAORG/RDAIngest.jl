@@ -8,17 +8,15 @@ using ConfigEnv
 using CSV
 using Dates
 using Arrow
+using XLSX 
 
 export opendatabase, get_table, addsource, getsource, createdatabase, getnamedkey,
-    read_champs_data, add_champs_sites, add_champs_protocols, read_champs_variables,
-    add_dataingest, add_transformation, ingest_champs_deaths, add_champs_variables, import_champs_dataset,
-    link_deathrows, ingest_champs, dataset_to_dataframe, dataset_to_arrow, dataset_to_csv, savedataframe,
-    ingest_champs_labtac,
-    ingest_comsa, read_comsa_data, add_comsa_sites, ingest_comsa_deaths, add_comsa_variables, read_comsa_variables,
-    get_comsa_vocabulary, import_comsa_dataset
-
-
-
+    add_dataingest, add_transformation, link_deathrows, get_variable, getdomain, 
+    dataset_to_dataframe, dataset_to_arrow, dataset_to_csv, savedataframe,
+    read_data, add_sites, ingest_deaths, add_variables, read_variables, get_vocabulary, import_dataset, 
+    add_protocols, add_comsa_dictionary, 
+    ingest_champs, ingest_comsa
+    
 struct VocabularyItem
     value::Int64
     code::String
@@ -29,7 +27,6 @@ struct Vocabulary
     description::String
     items::Vector{VocabularyItem}
 end
-
 
 """
    ingest_comsa(dbpath, dbname, datapath, ingest, transformation, code_reference, author, description)
@@ -52,23 +49,31 @@ This is the main function to ingest a COMSA Level 2 data distribution.
 
 function ingest_comsa(dbpath, dbname, datapath, ingest, transformation, code_reference, author, description, dictionarypath)
     db = opendatabase(dbpath, dbname)
+    sourcename = "COMSA"
+
     try
-        comsa = addsource(db, "COMSA")
+        comsa = addsource(db, sourcename)
         
-        add_comsa_sites(db, datapath)
+        add_sites(db, datapath, sourcename, "Comsa_WHO_VA_20230308", "provincia")
         println("Completed adding sites")
+
+        add_protocols(db, datapath, sourcename)
+        println("Completed adding protocols")
+
+        #add_comsa_dictionary(datapath,dictionarypath)
+        #println("Completed adding data dictionaries")
 
         ingest = add_dataingest(db, comsa, today(), ingest)
         transformation = add_transformation(db, 1, 1, transformation, code_reference, today(), author)
         
-        ingest_comsa_deaths(db, ingest, datapath)
+        ingest_deaths(db, ingest, datapath, sourcename, "Comsa_WHO_VA_20230308")
         println("Completed ingesting deaths")
         
-        add_comsa_variables(db, dictionarypath, "Format_Comsa_WHO_VA_20230308")
+        add_variables(db, sourcename, dictionarypath, "Format_Comsa_WHO_VA_20230308")
         println("Completed adding variables")
         
-        va_ds = import_comsa_dataset(db, transformation, ingest, datapath, "COMSA_WHO_VA_20230308", description)
-        println("Completed importing VA")
+        va_ds = import_dataset(db, datapath, sourcename, "COMSA_WHO_VA_20230308", transformation, ingest, description)
+        println("Completed importing COMSA VA")
         
         domain = getnamedkey(db, "domains", "COMSA", Symbol("domain_id"))
         death_idvar = get_variable(db, domain, "comsa_id")
@@ -81,67 +86,194 @@ function ingest_comsa(dbpath, dbname, datapath, ingest, transformation, code_ref
     end
 end
 
-"""
-    read_comsa_data(path, name)::AbstractDataFrame
 
-Returns a DataFrame with the COMSA data, from de-identified COMSA data collection
 """
-function read_comsa_data(path, name)::AbstractDataFrame
-    file = joinpath(path, "COMSA", "COMSA_de_identified_data", "$name.csv")
-    if !isfile(file)
-        error("File '$file' not found.")
-    else
-        df = CSV.File(file; delim=',', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
-        return df
+   ingest_champs(dbpath, dbname, datapath, ingest, transformation, code_reference, author, description)
+
+!!! note
+    The database should exist and be in the RDA format created by the [`createdatabase`](@ref) function
+
+This is the main function to ingest a CHAMPS Level 2 data distribution, including demographics, VA, decode, lab, tac data
+
+## Parameters
+  * `dbpath        `: The file path to the database.
+  * `dbname        `: The name of the database, .sqlite extension assumed.
+  * `datapath      `: The file path to the CHAMPS data distribution, assumes the distribution is extracyed into folder `CHAMPS_de_identified_data`.
+  * `ingest        `: The description of the data ingest.
+  * `transformation`: The description of the transformation for the data ingest.
+  * `code-reference`: The reference to the code used for the transformation `function` in `package`
+  * `author        `: The transformation author
+  * `description   `: The dataset description
+  * `dictionarypath`: The path to the data dictionaries
+  * `labtaconly    `: The indicator for adding lab tac data only - 'labtaconly' if only adding lab and tac.
+
+## Method
+
+1. A **CHAMPS** source is created if it doesn't exist, using function [`addsource`](@ref).
+2. The CHAMPS sites are extracted from the `CHAMPS_deid_basic_demographics` dataset and saved using the [`add_sites`](@ref) function.
+3. The CHAMPS protocol are added as pdfs from a sub-directory `CHAMPS\\Protocols` in `datapath` using the [`add_protocols`](@ref) function.
+4. A data ingest is created using the [`add_dataingest`](@ref) function.
+5. A transformation reprenting the complete data ingest is created using the [`add_transformation`](@ref) function.
+6. A entry for each death is inserted in the `deaths` table, for each row the `CHAMPS_deid_basic_demographics` dataset using the [`ingest_deaths`](@ref) function.
+7. The CHAMPS dataset variables are imported from a manually created data dictionary file as described in the [`add_variables`](@ref) function.
+8. The CHAMPS datasets are imported using the [`import_dataset`](@ref) function.
+9. The CHAMPS deaths are linked to the dataset rows containing the detail data about each death in the CHAMPS data distribution, using the function [`link_deathrows`](@ref)
+
+"""
+
+function ingest_champs(dbpath, dbname, datapath, ingest, transformation, code_reference, author, description, dictionarypath,labtaconly::String)
+    db = opendatabase(dbpath, dbname)
+    sourcename = "CHAMPS"
+
+    try
+        champs = addsource(db, sourcename)
+
+        if labtaconly!="labtaconly"
+            add_sites(db, datapath, sourcename, "CHAMPS_deid_basic_demographics", "site_iso_code")
+            println("Completed adding sites")
+
+            add_protocols(db, datapath, sourcename)
+            println("Completed adding protocols")
+        end
+        
+        ingest = add_dataingest(db, champs, today(), ingest)
+        transformation = add_transformation(db, 1, 1, transformation, code_reference, today(), author)
+        
+        if labtaconly!="labtaconly"
+        # Ingest deaths
+            ingest_deaths(db, ingest, datapath, sourcename, "CHAMPS_deid_basic_demographics")
+            println("Completed ingesting deaths")
+
+        # Add variables from each dataset
+            add_variables(db, sourcename, dictionarypath, "Format_CHAMPS_deid_basic_demographics")
+            add_variables(db, sourcename, dictionarypath, "Format_CHAMPS_deid_verbal_autopsy")
+            add_variables(db, sourcename, dictionarypath, "Format_CHAMPS_deid_decode_results")
+        end 
+        add_variables(db, sourcename, dictionarypath, "Format_CHAMPS_deid_tac_results")
+        add_variables(db, sourcename, dictionarypath, "Format_CHAMPS_deid_lab_results")
+        println("Completed adding variables")
+        
+        if labtaconly!="labtaconly"
+        # Import datasets
+            basic_ds = import_dataset(db, datapath, sourcename, "CHAMPS_deid_basic_demographics", transformation, ingest, description)
+            println("Completed importing CHAMPS basic demographics")
+            va_ds = import_dataset(db, datapath, sourcename, "CHAMPS_deid_verbal_autopsy", transformation, ingest, description)
+            println("Completed importing CHAMPS VA")
+            decode_ds = import_dataset(db, datapath, sourcename, "CHAMPS_deid_decode_results", transformation, ingest, description)
+            println("Completed importing CHAMPS decode resutls")
+        end
+        tac_ds = import_dataset(db, datapath, sourcename, "CHAMPS_deid_tac_results", transformation, ingest, description)
+        println("Completed importing CHAMPS TAC results")
+        lab_ds = import_dataset(db, datapath, sourcename, "CHAMPS_deid_lab_results", transformation, ingest, description)
+        println("Completed importing CHAMPS LAB results")
+        
+        domain = getnamedkey(db, "domains", sourcename, Symbol("domain_id"))
+        death_idvar = get_variable(db, domain, "champs_deid")
+
+        if labtaconly!="labtaconly"
+        # Insert records into deathrows table
+            link_deathrows(db, ingest, basic_ds, death_idvar)
+            link_deathrows(db, ingest, va_ds, death_idvar)
+            link_deathrows(db, ingest, decode_ds, death_idvar)
+        end
+        link_deathrows(db, ingest, tac_ds, death_idvar)
+        link_deathrows(db, ingest, lab_ds, death_idvar)
+        println("Completed linking death rows")
+        
+        return nothing
+    finally
+        close(db)
     end
 end
 
-"""
-    add_comsa_sites(db::SQLite.DB, datapath)
 
-Add the COMSA sites - provinces in Mozambique
 """
-function add_comsa_sites(db::SQLite.DB, datapath)
-    df = read_comsa_data(datapath, "Comsa_WHO_VA_20230308")
-    sites = combine(groupby(df, :provincia), nrow => :n)
-    source = getsource(db, "COMSA")
+ingest_deaths(db::SQLite.DB, ingest::Int64, datapath::String, sourcename, filename)
+
+INSERT deaths into the deaths table, for a specified data ingest. 
+
+## Parameters
+  * `ingest        `: The description of the data ingest.  
+  * `datapath  `: The path to the raw de-identified data, assumes the data is extracted into "De_identified_data".
+  * `sourcename    `: The name of data source, either "CHAMPS" or "COMSA".
+  * `filename      `: The name of the raw deaths data file.
+
+  * `sitevar       `: The name of the site name variable in raw deaths data. (built-in for now) 
+  * `idvar         `: The name of the unique identifier variable in raw deaths data. (built-in for now)
+"""
+function ingest_deaths(db::SQLite.DB, ingest::Int64, datapath::String, sourcename, filename)
+    deaths = read_data(datapath, sourcename, filename)
+    sites = DBInterface.execute(db, "SELECT * FROM sites WHERE source_id = $(getsource(db, sourcename));") |> DataFrame
+    
+    if sourcename=="COMSA"
+        sitevar = "provincia"
+        idvar = "comsa_id"
+    elseif sourcename=="CHAMPS"
+        sitevar = "site_iso_code"
+        idvar = "champs_deid"
+    end
+
+    deaths[!,:name] = deaths[!,sitevar] # match on name
+    sitedeaths = innerjoin(deaths, sites, on=:name, matchmissing=:notequal)
+    savedataframe(db, select(sitedeaths, :site_id, idvar => :external_id, [] => Returns(ingest) => :data_ingestion_id, copycols=false), "deaths")
+    return nothing
+end
+
+"""
+    add_sites(db::SQLite.DB, datapath::String, sourcename::String, filename::String, sitevar::String)
+
+Add the CHAMPS/COMSA sites. 
+CHAMPS: only with country iso2 codes: site_iso_code
+COMSA: Mozambique provinces:
+
+## Parameters
+  * `datapath  `: The path to the raw de-identified data, assumes the data is extracted into "De_identified_data".
+  * `sourcename    `: The name of data source, either "CHAMPS" or "COMSA".
+  * `filename      `: The name of the raw data file with site name variables.
+  * `sitevar       `: The name of the site name variable.
+  
+"""
+function add_sites(db::SQLite.DB, datapath::String, sourcename::String, filename::String, sitevar::String)
+    df = read_data(datapath, sourcename, filename)
+    source = getsource(db, sourcename)
+
+    sites = combine(groupby(df, sitevar), nrow => :n)
+
     insertcols!(sites, 1, :source_id => source)
-    select!(sites, :provincia => ByRow(x -> string("Mozambique:",x)) => :name, 
-    :provincia => :site_iso_code, #!!! match to column named site_iso_code in sites dataframe
-    :source_id)
-    replace!(sites.name, "Mozambique:"  => "Mozambique:NA")
+
+    select!(sites, sitevar => ByRow(x -> x) => :name, sitevar => :site_iso_code, :source_id)
+
+    if sourcename=="COMSA"
+        sites[!, :site_iso_code] .= "MZ"
+    end
+    
     savedataframe(db, sites, "sites")
     return nothing
 end
 
 """
-    ingest_comsa_deaths(db::SQLite.DB, ingest::Int64, path::String)
+    add_variables(db::SQLite.DB, sourcename, path::String, dictionary)
 
-INSERT COMSA VA deaths to deaths table. 
-"""
-function ingest_comsa_deaths(db::SQLite.DB, ingest::Int64, path::String)
-    deaths = read_comsa_data(path, "Comsa_WHO_VA_20230308")
-    sites = DBInterface.execute(db, "SELECT * FROM sites WHERE source_id = $(getsource(db, "COMSA"));") |> DataFrame
-    sites[!,:provincia] = sites.site_iso_code #!!! match to column named site_iso_code in sites dataframe 
-    sitedeaths = innerjoin(deaths, sites, on=:provincia, matchmissing=:notequal)
-    savedataframe(db, select(sitedeaths, :site_id, :comsa_id => :external_id, [] => Returns(ingest) => :data_ingestion_id, copycols=false), "deaths")
-    return nothing
-end
+Add the variables, including vocabularies for categorical variables.
 
+* `db            `: SQlite database
+* `sourcename    `: The name of data source, either "CHAMPS" or "COMSA".
+* `path          `: The path to the raw de-identified data, assumes the data is extracted into "De_identified_data"
+* `dictionary    `: The name of data dictionary.
 
 """
-    add_comsa_variables(db::SQLite.DB, path::String)
-
-Save the COMSA variables, including vocabularies for categorical variables.
-
-"""
-function add_comsa_variables(db::SQLite.DB, path::String, dictionary::String)
-    domain = getdomain(db, "COMSA")
-    if ismissing(domain)  # insert COMSA domain
-        domain = DBInterface.lastrowid(DBInterface.execute(db, "INSERT INTO domains(name,description) VALUES('COMSA','COMSA Data')"))
+function add_variables(db::SQLite.DB, sourcename, path::String, dictionary)
+    sourcename = uppercase(sourcename) # force source name to be upper cases
+    domain = getdomain(db, sourcename)
+    if ismissing(domain)  
+        if sourcename=="CHAMPS"
+            domain = DBInterface.lastrowid(DBInterface.execute(db, "INSERT INTO domains(name,description) VALUES('CHAMPS','CHAMPS Level2 Data')"))
+        elseif sourcename=="COMSA"
+            domain = DBInterface.lastrowid(DBInterface.execute(db, "INSERT INTO domains(name,description) VALUES('COMSA','COMSA Level2 Data')"))
+        end    
     end
     # start with basic demographic data
-    variables = read_comsa_variables(joinpath(path, "COMSA"), dictionary)
+    variables = read_variables(joinpath(path, sourcename), dictionary)
     insertcols!(variables, 1, :domain_id => domain)
     #variable insert SQL
     sql = """
@@ -164,17 +296,48 @@ function add_comsa_variables(db::SQLite.DB, path::String, dictionary::String)
     return nothing
 end
 
+"""
+    add_vocabulary(db::SQLite.DB, vocabulary::Vocabulary)
+
+Insert a vocabulary and its items into a RDA database, returns the vocabulary_id of the inserted vocabulary
+"""
+function add_vocabulary(db::SQLite.DB, vocabulary::Vocabulary)
+    id = getnamedkey(db, "vocabularies", vocabulary.name, "vocabulary_id")
+    if !ismissing(id)
+        return id
+    end
+    #vocabulary insert SQL
+    sql = """
+    INSERT INTO vocabularies (name, description) VAlUES (@name, @description)
+    RETURNING *;
+    """
+    stmt = DBInterface.prepare(db, sql)
+    v = DBInterface.execute(stmt, (name=vocabulary.name, description=vocabulary.description)) |> DataFrame
+    if nrow(v) > 0
+        id = v[1, :vocabulary_id]
+    else
+        error("Unable to insert vocabulary '$(vocabulary.name)'")
+    end
+    #vocabulary item insert SQL
+    sql = """
+    INSERT INTO vocabulary_items(vocabulary_id, value, code, description)
+    VALUES (@vocabulary_id, @value, @code, @description)
+    """
+    stmt = DBInterface.prepare(db, sql)
+    for item in vocabulary.items
+        DBInterface.execute(stmt, (vocabulary_id=id, value=item.value, code=item.code, description=item.description))
+    end
+    return id
+end
 
 """
-    read_comsa_variables(path, file)
+    read_variables(path, dictionary_filename)
 
-Read a csv file listing variables variables in a COMSA dataset, the files are:
-  1. 'Format_Comsa_WHO_VA_20230308.csv' variables in the verbal autopsy dataset
+Read a csv file listing variables, variable descriptions and data types in a dataset.
 
-These files are manually created from the 'COMSA De-Identified Data Set Description v4.2.pdf' file distributed with the COMSA de-identified dataset by exporting the pdf to an Excel spreadsheet and manually extracting the variable lists as csv files.
 """
-function read_comsa_variables(path, file)
-    file = joinpath(path, "$file.csv")
+function read_variables(dictionarypath, dictionary)
+    file = joinpath(dictionarypath, "$dictionary.csv")
     if !isfile(file)
         error("File '$file' not found.")
     else
@@ -183,7 +346,7 @@ function read_comsa_variables(path, file)
         for row in eachrow(df)
             l = lines(row.Description)
             if length(l) > 1
-                push!(vocabularies, get_comsa_vocabulary(row.Column_Name, l))
+                push!(vocabularies, get_vocabulary(row.Column_Name, l))
                 row.Description = l[1]
             else
                 push!(vocabularies, missing)
@@ -196,11 +359,11 @@ end
 
 
 """
-    get_comsa_vocabulary(variable, l)::Vocabulary
+    get_vocabulary(variable, l)::Vocabulary
 
 Get a vocabulary, name of vocabulary in line 1 of l, vocabulary items (code and description) in subsequent lines, comma-separated
 """
-function get_comsa_vocabulary(name, l)::Vocabulary
+function get_vocabulary(name, l)::Vocabulary
     items = Vector{VocabularyItem}()
     description = ""
     for i in eachindex(l)
@@ -214,24 +377,33 @@ function get_comsa_vocabulary(name, l)::Vocabulary
     return Vocabulary(name, description, items)
 end
 
-
 """
-    import_comsa_dataset(db::SQLite.DB, transformation, ingest, path, dataset_name)
+    import_dataset(db::SQLite.DB, datapath, sourcename, filename, transformation, ingest, description)
 
 Insert dataset, datarows, and data into SQLite db and returns the datatset_id
+
+## Parameters
+  * `db            `: SQlite database
+  * `datapath      `: The path to the raw de-identified data, assumes the data is extracted into "De_identified_data"
+  * `sourcename    `: The name of data source, either "CHAMPS" or "COMSA".
+  * `filename      `: The name of the raw data file to read.
+
+  * `transformation`: The description of the transformation for the data ingest.
+  * `ingest        `: The description of the data ingest.
+  * `description   `: The dataset description
 """
-function import_comsa_dataset(db::SQLite.DB, transformation, ingest, path, dataset_name, description)::Int64
+function import_dataset(db::SQLite.DB, datapath, sourcename, filename, transformation, ingest, description)::Int64
     try
         SQLite.transaction(db)
-        data = read_comsa_data(path, dataset_name)
-        variables = lookup_variables(db, names(data), getnamedkey(db, "domains", "COMSA", "domain_id"))
+        data = read_data(datapath, sourcename, filename)
+        variables = lookup_variables(db, names(data), getnamedkey(db, "domains", sourcename, "domain_id"))
         var_lookup = Dict{String,Int64}(zip(variables.name, variables.variable_id))
         sql = """
         INSERT INTO datasets(name, date_created, description) 
         VALUES (@name, @date_created, @description);
         """
         stmt = DBInterface.prepare(db, sql)
-        dataset_id = DBInterface.lastrowid(DBInterface.execute(stmt, (name=dataset_name, date_created=Dates.format(today(), "yyyy-mm-dd"), description=description)))
+        dataset_id = DBInterface.lastrowid(DBInterface.execute(stmt, (name=filename, date_created=Dates.format(today(), "yyyy-mm-dd"), description=description)))
         add_dataset_ingest(db, dataset_id, transformation, ingest)
         add_transformation_output(db, dataset_id, transformation)
         savedataframe(db, select(variables, [] => Returns(dataset_id) => :dataset_id, :variable_id), "dataset_variables")
@@ -257,107 +429,49 @@ function import_comsa_dataset(db::SQLite.DB, transformation, ingest, path, datas
     end
 end
 
-
 """
-!!! NEW UPDATES BEFORE THIS LINE
-"""
+    read_data(path, sourcename, filename)::AbstractDataFrame
 
-
-"""
-Adding CHAMPS lab and tac
-
-ingest_champs_labtac(dbpath, dbname, datapath, ingest, transformation, code_reference, author, description)
-
-This is modified based on main ingest_champs function to ingest the laboratory or TAC results of CHAMPS Level 2 data distribution.
+Returns a DataFrame, read raw de-identified COMSA/CHAMPS data
 
 ## Parameters
-  * `dbpath        `: The file path to the database.
-  * `dbname        `: The name of the database, .sqlite extension assumed.
-  * `datapath      `: The file path to the CHAMPS data distribution, assumes the distribution is extracyed into folder `CHAMPS_de_identified_data`.
-  * `ingest        `: The description of the data ingest.
-  * `transformation`: The description of the transformation for the data ingest.
-  * `code-reference`: The reference to the code used for the transformation `function` in `package`
-  * `author        `: The transformation author
-  * `description   `: The dataset description
-  * `dictionarypath`: The path to the data dictionaries
+  
+  * `sourcename    `: The name of data source, either "CHAMPS" or "COMSA".
+  * `datapath      `: The path to the raw de-identified data, assumes the data is extracted into "De_identified_data"
+  * `filename      `: The name of the raw data file to read.
 """
-function ingest_champs_labtac(dbpath, dbname, datapath, ingest, transformation, code_reference, author, description, dictionarypath)
-    db = opendatabase(dbpath, dbname)
-    try
-        champs = addsource(db, "CHAMPS")
-        ingest = add_dataingest(db, champs, today(), ingest)
-        transformation = add_transformation(db, 1, 1, transformation, code_reference, today(), author)
-        add_champs_variables(db, dictionarypath, "Format_CHAMPS_deid_tac_results")
-        add_champs_variables(db, dictionarypath, "Format_CHAMPS_deid_lab_results")
-        tac_ds = import_champs_dataset(db, transformation, ingest, datapath, "CHAMPS_deid_tac_results", description)
-        lab_ds = import_champs_dataset(db, transformation, ingest, datapath, "CHAMPS_deid_lab_results", description)
-        domain = getnamedkey(db, "domains", "CHAMPS", Symbol("domain_id"))
-        death_idvar = get_variable(db, domain, "champs_deid")
-        link_deathrows(db, ingest, tac_ds, death_idvar) #CHAMPS_deid_tac_results
-        link_deathrows(db, ingest, lab_ds, death_idvar) #CHAMPS_deid_lab_results
-        return nothing
-    finally
-        close(db)
+
+function read_data(datapath, sourcename, filename) #::AbstractDataFrame
+    file = joinpath(datapath, sourcename, "De_identified_data", "$filename.csv")
+    if !isfile(file)
+        error("File '$file' not found.")
+    else
+        df = CSV.File(file; delim=',', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
+        return df
     end
 end
 
-"""
-   ingest_champs(dbpath, dbname, datapath, ingest, transformation, code_reference, author, description)
 
-!!! note
-    The database should exist and be in the RDA format created by the [`createdatabase`](@ref) function
 
-This is the main function to ingest a CHAMPS Level 2 data distribution. The current version does not ingest the laboratory or TAC results.
+"""NEW UPDATES ABOVE THIS"""
 
-## Parameters
-  * `dbpath        `: The file path to the database.
-  * `dbname        `: The name of the database, .sqlite extension assumed.
-  * `datapath      `: The file path to the CHAMPS data distribution, assumes the distribution is extracyed into folder `CHAMPS_de_identified_data`.
-  * `ingest        `: The description of the data ingest.
-  * `transformation`: The description of the transformation for the data ingest.
-  * `code-reference`: The reference to the code used for the transformation `function` in `package`
-  * `author        `: The transformation author
-  * `description   `: The dataset description
-  * `dictionarypath`: The path to the data dictionaries
-
-## Method
-
-1. A **CHAMPS** source is created if it doesn't exist, using function [`addsource`](@ref).
-2. The CHAMPS sites are extracted from the `CHAMPS_deid_basic_demographics` dataset and saved using the [`add_champs_sites`](@ref) function.
-3. The CHAMPS protocol are added as pdfs from a sub-directory `CHAMPS\\Protocols` in `datapath` using the [`add_champs_protocols`](@ref) function.
-4. A data ingest is created using the [`add_dataingest`](@ref) function.
-5. A transformation reprenting the complete data ingest is created using the [`add_transformation`](@ref) function.
-6. A entry for each death is inserted in the `deaths` table, for each row the `CHAMPS_deid_basic_demographics` dataset using the [`ingest_champs_deaths`](@ref) function.
-7. The CHAMPS dataset variables are imported from a manually created data dictionary file as described in the [`add_champs_variables`](@ref) function.
-8. The CHAMPS datasets are imported using the [`import_champs_dataset`](@ref) function.
-9. The CHAMPS deaths are linked to the dataset rows containing the detail data about each death in the CHAMPS data distribution, using the function [`link_deathrows`](@ref)
 
 """
-function ingest_champs(dbpath, dbname, datapath, ingest, transformation, code_reference, author, description, dictionarypath)
-    db = opendatabase(dbpath, dbname)
-    try
-        champs = addsource(db, "CHAMPS")
-        add_champs_sites(db, datapath)
-        add_champs_protocols(db, datapath)
-        ingest = add_dataingest(db, champs, today(), ingest)
-        transformation = add_transformation(db, 1, 1, transformation, code_reference, today(), author)
-        ingest_champs_deaths(db, ingest, datapath)
-        add_champs_variables(db, dictionarypath, "Format_CHAMPS_deid_basic_demographics")
-        add_champs_variables(db, dictionarypath, "Format_CHAMPS_deid_verbal_autopsy")
-        add_champs_variables(db, dictionarypath, "Format_CHAMPS_deid_decode_results")
-        basic_ds = import_champs_dataset(db, transformation, ingest, datapath, "CHAMPS_deid_basic_demographics", description)
-        va_ds = import_champs_dataset(db, transformation, ingest, datapath, "CHAMPS_deid_verbal_autopsy", description)
-        decode_ds = import_champs_dataset(db, transformation, ingest, datapath, "CHAMPS_deid_decode_results", description)
-        domain = getnamedkey(db, "domains", "CHAMPS", Symbol("domain_id"))
-        death_idvar = get_variable(db, domain, "champs_deid")
-        link_deathrows(db, ingest, basic_ds, death_idvar) #CHAMPS_deid_basic_demographics
-        link_deathrows(db, ingest, va_ds, death_idvar) #CHAMPS_deid_verbal_autopsy
-        link_deathrows(db, ingest, decode_ds, death_idvar) #CHAMPS_deid_decode_results
-        return nothing
-    finally
-        close(db)
-    end
+    lines(str)
+
+Returns an array of lines in `str` 
+"""
+lines(str) = split(str, '\n')
+
+"""
+    getdomain(db::SQLite.DB, domainname)
+
+Return the domain_id for domain named `domainname`
+"""
+function getdomain(db::SQLite.DB, domainname)
+    return getnamedkey(db, "domains", domainname, Symbol("domain_id"))
 end
+
 """
     dataset_to_dataframe(db::SQLite.DB, dataset)::AbstractDataFrame
 
@@ -425,6 +539,7 @@ function datasetname(db, dataset)
         return df[1, :name]
     end
 end
+
 """
     getnamedkey(db, table, key, keycol)
 
@@ -441,6 +556,7 @@ function getnamedkey(db, table, key, keycol)
         return df[1, keycol]
     end
 end
+
 """
     get_variable(db, domain, name)
 
@@ -463,6 +579,7 @@ function get_variable(db, domain, name)
         return df[1, :id]
     end
 end
+
 """
     getsource(db::SQLite.DB, name)
 
@@ -479,54 +596,30 @@ Add source `name` to the sources table, and returns the `source_id`
 """
 function addsource(db::SQLite.DB, name)
     id = getsource(db, name)
-    if ismissing(id)  # insert CHAMPS domain
+    if ismissing(id)
         stmt = DBInterface.prepare(db, "INSERT INTO sources (name) VALUES (@name)")
         id = DBInterface.lastrowid(DBInterface.execute(stmt, (name = name)))
     end
     return id
 end
-"""
-    read_champs_data(path, name)::AbstractDataFrame
-
-Returns a DataFrame with the CHAMPS data, from the Level 2 de-identified CHAMPS data collection
-"""
-function read_champs_data(path, name)::AbstractDataFrame
-    file = joinpath(path, "CHAMPS", "CHAMPS_de_identified_data", "$name.csv")
-    if !isfile(file)
-        error("File '$file' not found.")
-    else
-        df = CSV.File(file; delim=',', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
-        return df
-    end
-end
 
 """
-    add_champs_sites(db::SQLite.DB, datapath)
+    add_protocols(db::SQLite.DB, datapath, sourcename)
 
-Add the CHAMPS sites - note, actual CHAMP sites not know - sites are just the countries the sites are in
+Add CHAMPS and COMSA protocols
 """
-function add_champs_sites(db::SQLite.DB, datapath)
-    df = read_champs_data(datapath, "CHAMPS_deid_basic_demographics")
-    sites = combine(groupby(df, :site_iso_code), nrow => :n)
-    source = getsource(db, "CHAMPS")
-    insertcols!(sites, 1, :source_id => source)
-    select!(sites, :site_iso_code => ByRow(x -> x) => :name, :site_iso_code, :source_id)
-    savedataframe(db, sites, "sites")
-    return nothing
-end
-
-"""
-    add_champs_protocols(db::SQLite.DB, datapath)
-
-Add the CHAMPS Mortality Surveillance and Social Behavioural Science protocols
-"""
-function add_champs_protocols(db::SQLite.DB, datapath)
+function add_protocols(db::SQLite.DB, datapath, sourcename)
     sql = raw"""
     INSERT INTO protocols (name) VALUES (@name)
     """
     stmt = DBInterface.prepare(db, sql)
-    DBInterface.execute(stmt, (name = "CHAMPS-Mortality-Surveillance-Protocol-v1.3"))
-    DBInterface.execute(stmt, (name = "CHAMPS-Social-Behavioral-Science-Protocol-v1.0"))
+
+    if sourcename=="CHAMPS"
+        DBInterface.execute(stmt, (name = "CHAMPS-Mortality-Surveillance-Protocol-v1.3"))
+        DBInterface.execute(stmt, (name = "CHAMPS-Social-Behavioral-Science-Protocol-v1.0"))
+    elseif sourcename=="COMSA"
+        DBInterface.execute(stmt, (name = "COMSA-FR-protocol_version-1.0_05July2017"))
+    end
     #insert document
     sql = raw"""
     INSERT INTO protocol_documents (protocol_id, name, document) VALUES (@protocol_id, @name, @document)
@@ -539,7 +632,7 @@ function add_champs_protocols(db::SQLite.DB, datapath)
     protocols = DBInterface.execute(db, "SELECT * FROM protocols") |> DataFrame
     sites = DBInterface.execute(db, "SELECT * FROM sites") |> DataFrame
     for row in eachrow(protocols)
-        file = joinpath(datapath, "CHAMPS", "Protocols", "$(row.name).pdf")
+        file = joinpath(datapath, sourcename, "Protocols", "$(row.name).pdf")
         if isfile(file)
             document = read(file)
             DBInterface.execute(stmt, (protocol_id=row.protocol_id, name="$(row.name).pdf", document=document))
@@ -550,61 +643,27 @@ function add_champs_protocols(db::SQLite.DB, datapath)
     end
     return nothing
 end
-"""
-    lines(str)
-
-Returns an array of lines in `str` 
-"""
-lines(str) = split(str, '\n')
 
 """
-    read_variables(path, file)
+    add_comsa_dictionary(datapath,dictionarypath)
 
-Read a csv file listing variables variables in a CHAMPS dataset, the files are:
-  1. 'Format_CHAMPS_deid_basic_demographics.csv' variables in the basic demographic dataset
-  2. 'Format_CHAMPS_deid_decode_results.csv' variables in the cuase of death dataset
-  3. 'Format_CHAMPS_deid_verbal_autopsy.csv' variables in the verbal autopsy dataset
-
-These files are manually created from the 'CHAMPS De-Identified Data Set Description v4.2.pdf' file distributed with the CHAMPS de-identified dataset by exporting the pdf to an Excel spreadsheet and manually extracting the variable lists as csv files.
+Create data dictionary for RDA from publicly released COMSA data dictionary excels
 """
-function read_champs_variables(path, file)
-    file = joinpath(path, "$file.csv")
+function add_comsa_dictionary(datapath,dictionarypath)
+    sourcename = "COMSA"
+    file = joinpath(datapath, sourcename, "Questionnaires/Comsa_data_dictionary_20190909.xlsx")
     if !isfile(file)
         error("File '$file' not found.")
     else
-        df = CSV.File(file; delim=';', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
-        vocabularies = Vector{Union{Vocabulary,Missing}}()
-        for row in eachrow(df)
-            l = lines(row.Description)
-            if length(l) > 1
-                push!(vocabularies, get_champs_vocabulary(row.Column_Name, l))
-                row.Description = l[1]
-            else
-                push!(vocabularies, missing)
-            end
-        end
-        df.Vocabulary = vocabularies
-        return df
-    end
+        #df = CSV.File(file; delim=';', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
+        df = XLSX.readdata(file, 5, "A6:C523")
+        df = DataFrame(df[2:end,:], convert(Vector{String}, df[1,:]))
+        CSV.write(joinpath(dictionarypath, sourcename,"Comsa_data_dictionary_20190909_VA.csv"), df)
+    end   
+    return nothing
 end
-"""
-    get_champs_vocabulary(variable, l)::Vocabulary
 
-Get a vocabulary, name of vocabulary in line 1 of l, vocabulary items (code and description) in subsequent lines, comma-separated
-"""
-function get_champs_vocabulary(name, l)::Vocabulary
-    items = Vector{VocabularyItem}()
-    description = ""
-    for i in eachindex(l)
-        if i == 1
-            description = l[i]
-        else
-            item = split(l[i], ',')
-            push!(items, length(item) > 1 ? VocabularyItem(i - 1, item[1], item[2]) : VocabularyItem(i - 1, item[1], missing))
-        end
-    end
-    return Vocabulary(name, description, items)
-end
+"""!!! NEW UPDATES ABOVE THIS LINE"""
 
 """
     add_dataingest(db::SQLite.DB, source_id::Int64, date::Date, description::String)::Int64
@@ -644,136 +703,10 @@ function add_transformation(db::SQLite.DB, type::Int64, status::Int64, descripti
         error("Unable to insert transformation")
     end
 end
-"""
-    ingest_champs_deaths(db::SQLite.DB, ingest::Int64, path::String)
 
-INSERT CHAMPS deaths into the deaths table, for a specified data ingest. 
-"""
-function ingest_champs_deaths(db::SQLite.DB, ingest::Int64, path::String)
-    deaths = read_champs_data(path, "CHAMPS_deid_basic_demographics")
-    sites = DBInterface.execute(db, "SELECT * FROM sites WHERE source_id = $(getsource(db, "CHAMPS"));") |> DataFrame
-    sitedeaths = innerjoin(deaths, sites, on=:site_iso_code, matchmissing=:notequal)
-    savedataframe(db, select(sitedeaths, :site_id, :champs_deid => :external_id, [] => Returns(ingest) => :data_ingestion_id, copycols=false), "deaths")
-    return nothing
-end
-"""
-    getdomain(db::SQLite.DB, domainname)
 
-Return the domain_id for domain named `domainname`
-"""
-function getdomain(db::SQLite.DB, domainname)
-    return getnamedkey(db, "domains", domainname, Symbol("domain_id"))
-end
 
-"""
-    add_champs_variables(db::SQLite.DB, path::String)
 
-Save the CHAMPS variables, including vocabularies for categorical variables.
-!!! note
-    Ingested data is not checked to ensure that categorical variable values conform to the vocabulary, in fact in the provided data there are deviations, mostly in letter case. Common categories, such as the verbal autopsy indicators are also not converted to categorical values.
-"""
-function add_champs_variables(db::SQLite.DB, path::String, dictionary::String)
-    domain = getdomain(db, "CHAMPS")
-    if ismissing(domain)  # insert CHAMPS domain
-        domain = DBInterface.lastrowid(DBInterface.execute(db, "INSERT INTO domains(name,description) VALUES('CHAMPS','CHAMPS Level2 Data')"))
-    end
-    # start with basic demographic data
-    variables = read_champs_variables(joinpath(path, "CHAMPS"), dictionary)
-    insertcols!(variables, 1, :domain_id => domain)
-    #variable insert SQL
-    sql = """
-    INSERT INTO variables (domain_id, name, value_type_id, vocabulary_id, description, note)
-    VALUES (@domain_id, @name, @value_type_id, @vocabulary_id, @description, @note)
-    ON CONFLICT DO UPDATE
-      SET vocabulary_id = excluded.vocabulary_id,
-          description = excluded.description,
-          note = excluded.note 
-      WHERE variables.vocabulary_id IS NULL OR variables.description IS NULL OR variables.note IS NULL;
-    """
-    stmt = DBInterface.prepare(db, sql)
-    for row in eachrow(variables)
-        id = missing
-        if !ismissing(row.Vocabulary)
-            id = add_vocabulary(db, row.Vocabulary)
-        end
-        DBInterface.execute(stmt, (domain_id=row.domain_id, name=row.Column_Name, value_type_id=row.DataType, vocabulary_id=id, description=row.Description, note=row.Note))
-    end
-    return nothing
-end
-"""
-    add_vocabulary(db::SQLite.DB, vocabulary::Vocabulary)
-
-Insert a vocabulary and its items into a RDA database, returns the vocabulary_id of the inserted vocabulary
-"""
-function add_vocabulary(db::SQLite.DB, vocabulary::Vocabulary)
-    id = getnamedkey(db, "vocabularies", vocabulary.name, "vocabulary_id")
-    if !ismissing(id)
-        return id
-    end
-    #vocabulary insert SQL
-    sql = """
-    INSERT INTO vocabularies (name, description) VAlUES (@name, @description)
-    RETURNING *;
-    """
-    stmt = DBInterface.prepare(db, sql)
-    v = DBInterface.execute(stmt, (name=vocabulary.name, description=vocabulary.description)) |> DataFrame
-    if nrow(v) > 0
-        id = v[1, :vocabulary_id]
-    else
-        error("Unable to insert vocabulary '$(vocabulary.name)'")
-    end
-    #vocabulary item insert SQL
-    sql = """
-    INSERT INTO vocabulary_items(vocabulary_id, value, code, description)
-    VALUES (@vocabulary_id, @value, @code, @description)
-    """
-    stmt = DBInterface.prepare(db, sql)
-    for item in vocabulary.items
-        DBInterface.execute(stmt, (vocabulary_id=id, value=item.value, code=item.code, description=item.description))
-    end
-    return id
-end
-"""
-    import_champs_dataset(db::SQLite.DB, transformation, ingest, path, dataset_name)
-
-Insert dataset, datarows, and data into SQLite db and returns the datatset_id
-"""
-function import_champs_dataset(db::SQLite.DB, transformation, ingest, path, dataset_name, description)::Int64
-    try
-        SQLite.transaction(db)
-        data = read_champs_data(path, dataset_name)
-        variables = lookup_variables(db, names(data), getnamedkey(db, "domains", "CHAMPS", "domain_id"))
-        var_lookup = Dict{String,Int64}(zip(variables.name, variables.variable_id))
-        sql = """
-        INSERT INTO datasets(name, date_created, description) 
-        VALUES (@name, @date_created, @description);
-        """
-        stmt = DBInterface.prepare(db, sql)
-        dataset_id = DBInterface.lastrowid(DBInterface.execute(stmt, (name=dataset_name, date_created=Dates.format(today(), "yyyy-mm-dd"), description=description)))
-        add_dataset_ingest(db, dataset_id, transformation, ingest)
-        add_transformation_output(db, dataset_id, transformation)
-        savedataframe(db, select(variables, [] => Returns(dataset_id) => :dataset_id, :variable_id), "dataset_variables")
-        #store datarows
-        stmt = DBInterface.prepare(db, "INSERT INTO datarows (dataset_id) VALUES(@dataset_id);")
-        for i = 1:nrow(data)
-            DBInterface.execute(stmt, (dataset_id = dataset_id))
-        end
-        #prepare data for storage
-        datarows = DBInterface.execute(db, "SELECT row_id FROM datarows WHERE dataset_id = $dataset_id;") |> DataFrame
-        d = hcat(datarows, data, makeunique=true, copycols=false) #add the row_id to each row of data
-        #store whole column at a time
-        for col in propertynames(data)
-            variable_id = var_lookup[string(col)]
-            coldata = select(d, :row_id, col => :value; copycols=false)
-            add_data_column(db, variable_id, coldata)
-        end
-        SQLite.commit(db)
-        return dataset_id
-    catch e
-        SQLite.rollback(db)
-        throw(e)
-    end
-end
 """
     add_data_column(db::SQLite.DB, variable_id, coldata)
 
