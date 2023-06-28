@@ -1,6 +1,11 @@
-using DuckDB
-using DBInterface
+using DuckDB, DBInterface
 
-db = DuckDB.DB("D:\\Temp\\test.duckdb")
+db = DBInterface.connect(DuckDB.DB,"D:\\Temp\\test.duckdb")
 t = DBInterface.execute(db, "SELECT 1")
-DuckDB.close_database(db)
+DBInterface.close!(db)
+# db = nothing
+# GC.gc()
+
+# db = DBInterface.connect(DuckDB.DB,"D:\\Temp\\test.duckdb")
+# t = DBInterface.execute(db, "SELECT 1")
+# DBInterface.close!(db)
