@@ -9,13 +9,17 @@ using CSV
 using Dates
 using Arrow
 using XLSX 
+using DelimitedFiles
 
 export opendatabase, get_table, addsource, getsource, createdatabase, getnamedkey,
     add_dataingest, add_transformation, link_deathrows, get_variable, getdomain, 
     dataset_to_dataframe, dataset_to_arrow, dataset_to_csv, savedataframe,
     read_data, add_sites, ingest_deaths, add_variables, read_variables, get_vocabulary, import_dataset, 
-    add_protocols, add_comsa_dictionary, 
+    add_protocols, 
+    vec_to_df, join_wona, 
+    #create_champs_dictionary, create_comsa_dictionary, 
     ingest_champs, ingest_comsa
+    
     
 struct VocabularyItem
     value::Int64
@@ -54,7 +58,7 @@ function ingest_comsa(dbpath, dbname, datapath, ingest, transformation, code_ref
     try
         comsa = addsource(db, sourcename)
         
-        add_sites(db, datapath, sourcename, "Comsa_WHO_VA_20230308", "provincia")
+        add_sites(db, datapath, sourcename, "Comsa_WHO_VA_20230308", "provincia",site_iso_code="MZ")
         println("Completed adding sites")
 
         add_protocols(db, datapath, sourcename)
@@ -66,7 +70,8 @@ function ingest_comsa(dbpath, dbname, datapath, ingest, transformation, code_ref
         ingest = add_dataingest(db, comsa, today(), ingest)
         transformation = add_transformation(db, 1, 1, transformation, code_reference, today(), author)
         
-        ingest_deaths(db, ingest, datapath, sourcename, "Comsa_WHO_VA_20230308")
+        ingest_deaths(db, ingest, datapath, sourcename, "Comsa_WHO_VA_20230308",
+                        sitevar="provincia", idvar = "comsa_id")
         println("Completed ingesting deaths")
         
         add_variables(db, sourcename, dictionarypath, "Format_Comsa_WHO_VA_20230308")
@@ -141,7 +146,8 @@ function ingest_champs(dbpath, dbname, datapath, ingest, transformation, code_re
         
         if labtaconly!="labtaconly"
         # Ingest deaths
-            ingest_deaths(db, ingest, datapath, sourcename, "CHAMPS_deid_basic_demographics")
+            ingest_deaths(db, ingest, datapath, sourcename, "CHAMPS_deid_basic_demographics",
+                            sitevar="site_iso_code", idvar = "champs_deid")
             println("Completed ingesting deaths")
 
         # Add variables from each dataset
@@ -188,7 +194,7 @@ end
 
 
 """
-ingest_deaths(db::SQLite.DB, ingest::Int64, datapath::String, sourcename, filename)
+ingest_deaths(db::SQLite.DB, ingest::Int64, datapath::String, sourcename, filename, sitevar, idvar)
 
 INSERT deaths into the deaths table, for a specified data ingest. 
 
@@ -201,18 +207,10 @@ INSERT deaths into the deaths table, for a specified data ingest.
   * `sitevar       `: The name of the site name variable in raw deaths data. (built-in for now) 
   * `idvar         `: The name of the unique identifier variable in raw deaths data. (built-in for now)
 """
-function ingest_deaths(db::SQLite.DB, ingest::Int64, datapath::String, sourcename, filename)
+function ingest_deaths(db::SQLite.DB, ingest::Int64, datapath::String, sourcename, filename, sitevar, idvar)
     deaths = read_data(datapath, sourcename, filename)
     sites = DBInterface.execute(db, "SELECT * FROM sites WHERE source_id = $(getsource(db, sourcename));") |> DataFrame
     
-    if sourcename=="COMSA"
-        sitevar = "provincia"
-        idvar = "comsa_id"
-    elseif sourcename=="CHAMPS"
-        sitevar = "site_iso_code"
-        idvar = "champs_deid"
-    end
-
     deaths[!,:name] = deaths[!,sitevar] # match on name
     sitedeaths = innerjoin(deaths, sites, on=:name, matchmissing=:notequal)
     savedataframe(db, select(sitedeaths, :site_id, idvar => :external_id, [] => Returns(ingest) => :data_ingestion_id, copycols=false), "deaths")
@@ -220,7 +218,7 @@ function ingest_deaths(db::SQLite.DB, ingest::Int64, datapath::String, sourcenam
 end
 
 """
-    add_sites(db::SQLite.DB, datapath::String, sourcename::String, filename::String, sitevar::String)
+    add_sites(db::SQLite.DB, datapath::String, sourcename::String, filename::String, sitevar::String, iso_code)
 
 Add the CHAMPS/COMSA sites. 
 CHAMPS: only with country iso2 codes: site_iso_code
@@ -231,9 +229,10 @@ COMSA: Mozambique provinces:
   * `sourcename    `: The name of data source, either "CHAMPS" or "COMSA".
   * `filename      `: The name of the raw data file with site name variables.
   * `sitevar       `: The name of the site name variable.
+  * `iso_code      `: The site iso code if not provided in the dataset.
   
 """
-function add_sites(db::SQLite.DB, datapath::String, sourcename::String, filename::String, sitevar::String)
+function add_sites(db::SQLite.DB, datapath::String, sourcename::String, filename::String, sitevar::String, iso_code::String)
     df = read_data(datapath, sourcename, filename)
     source = getsource(db, sourcename)
 
@@ -241,12 +240,12 @@ function add_sites(db::SQLite.DB, datapath::String, sourcename::String, filename
 
     insertcols!(sites, 1, :source_id => source)
 
-    select!(sites, sitevar => ByRow(x -> x) => :name, sitevar => :site_iso_code, :source_id)
-
-    if sourcename=="COMSA"
-        sites[!, :site_iso_code] .= "MZ"
+    if !("site_iso_code" in names(df))
+        sites[!, :site_iso_code] .= iso_code
     end
     
+    select!(sites, sitevar => ByRow(x -> x) => :name, :site_iso_code, :source_id)
+
     savedataframe(db, sites, "sites")
     return nothing
 end
@@ -265,12 +264,10 @@ Add the variables, including vocabularies for categorical variables.
 function add_variables(db::SQLite.DB, sourcename, path::String, dictionary)
     sourcename = uppercase(sourcename) # force source name to be upper cases
     domain = getdomain(db, sourcename)
+    
     if ismissing(domain)  
-        if sourcename=="CHAMPS"
-            domain = DBInterface.lastrowid(DBInterface.execute(db, "INSERT INTO domains(name,description) VALUES('CHAMPS','CHAMPS Level2 Data')"))
-        elseif sourcename=="COMSA"
-            domain = DBInterface.lastrowid(DBInterface.execute(db, "INSERT INTO domains(name,description) VALUES('COMSA','COMSA Level2 Data')"))
-        end    
+        name="INSERT INTO domains(name,description) VALUES('"*sourcename*"','"*sourcename*" Level2 Data')"
+        domain = DBInterface.lastrowid(DBInterface.execute(db, name))
     end
     # start with basic demographic data
     variables = read_variables(joinpath(path, sourcename), dictionary)
@@ -451,8 +448,6 @@ function read_data(datapath, sourcename, filename) #::AbstractDataFrame
     end
 end
 
-
-
 """NEW UPDATES ABOVE THIS"""
 
 
@@ -608,18 +603,16 @@ end
 
 Add CHAMPS and COMSA protocols
 """
-function add_protocols(db::SQLite.DB, datapath, sourcename)
+function add_protocols(db::SQLite.DB, datapath, sourcename, protocolnames)
     sql = raw"""
     INSERT INTO protocols (name) VALUES (@name)
     """
     stmt = DBInterface.prepare(db, sql)
 
-    if sourcename=="CHAMPS"
-        DBInterface.execute(stmt, (name = "CHAMPS-Mortality-Surveillance-Protocol-v1.3"))
-        DBInterface.execute(stmt, (name = "CHAMPS-Social-Behavioral-Science-Protocol-v1.0"))
-    elseif sourcename=="COMSA"
-        DBInterface.execute(stmt, (name = "COMSA-FR-protocol_version-1.0_05July2017"))
+    for i in 1:length(protocolnames)
+        DBInterface.execute(stmt, (name = protocolnames[i])
     end
+    
     #insert document
     sql = raw"""
     INSERT INTO protocol_documents (protocol_id, name, document) VALUES (@protocol_id, @name, @document)
@@ -644,24 +637,21 @@ function add_protocols(db::SQLite.DB, datapath, sourcename)
     return nothing
 end
 
-"""
-    add_comsa_dictionary(datapath,dictionarypath)
-
-Create data dictionary for RDA from publicly released COMSA data dictionary excels
-"""
-function add_comsa_dictionary(datapath,dictionarypath)
-    sourcename = "COMSA"
-    file = joinpath(datapath, sourcename, "Questionnaires/Comsa_data_dictionary_20190909.xlsx")
-    if !isfile(file)
-        error("File '$file' not found.")
-    else
-        #df = CSV.File(file; delim=';', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
-        df = XLSX.readdata(file, 5, "A6:C523")
-        df = DataFrame(df[2:end,:], convert(Vector{String}, df[1,:]))
-        CSV.write(joinpath(dictionarypath, sourcename,"Comsa_data_dictionary_20190909_VA.csv"), df)
-    end   
-    return nothing
+# convert a vector to data frame, fill with missing
+function vec_to_df(x)
+    y=[vcat(a, fill("", maximum(length.(x)) - length(a))) for a in x]
+    df = DataFrame(mapreduce(permutedims, vcat, y), :auto)
+    return df
 end
+
+# join ignore empty string
+function join_wona(vec,sep)
+    vec = filter((i) -> i !==missing, vec)
+    vec = filter((i) -> i != "", vec)
+    y = join(Array(vec),sep)
+    return y
+end
+
 
 """!!! NEW UPDATES ABOVE THIS LINE"""
 
@@ -703,8 +693,6 @@ function add_transformation(db::SQLite.DB, type::Int64, status::Int64, descripti
         error("Unable to insert transformation")
     end
 end
-
-
 
 
 """
