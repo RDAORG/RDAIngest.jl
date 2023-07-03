@@ -27,6 +27,94 @@ struct Vocabulary
     items::Vector{VocabularyItem}
 end
 
+abstract type AbstractSource end
+Base.@kwdef struct CHAMPSSource <: AbstractSource
+    name::String = "CHAMPS"
+    datafolder::String = "De_identified_data"
+    site_data::String = "CHAMPS_deid_basic_demographics"
+    site_col::String = "site_iso_code"
+    protocolfolder::String = "Protocols"
+    protocols::Vector{String} = ["CHAMPS-Mortality-Surveillance-Protocol-v1.3",
+                                 "CHAMPS-Social-Behavioral-Science-Protocol-v1.0"]
+    instrumentfolder::String = ""
+    instruments::Dict{String,String} = Dict()
+    variables::Vector{String} = ["Format_CHAMPS_deid_basic_demographics", 
+                                 "Format_CHAMPS_deid_verbal_autopsy", 
+                                 "Format_CHAMPS_deid_decode_results",
+                                 "Format_CHAMPS_deid_tac_results", 
+                                 "Format_CHAMPS_deid_lab_results"]
+    datasets::Vector{String} = ["CHAMPS_deid_basic_demographics", 
+                                "CHAMPS_deid_verbal_autopsy", 
+                                "CHAMPS_deid_decode_results",
+                                "CHAMPS_deid_tac_results", 
+                                "CHAMPS_deid_lab_results"]
+    deaths::String = "CHAMPS_deid_basic_demographics"
+    death_idvar::String = "champs_deid"
+    extension::String = "csv"
+    delim::Char = ','
+    quotechar::Char = '"'
+    dateformat::String = "yyyy-mm-dd"
+    decimal::Char = '.'
+end
+Base.@kwdef struct COMSASource <: AbstractSource
+    name::String = "COMSA"
+    datafolder::String = "De_identified_data"
+    site_data::String = "Comsa_death_20230308"
+    site_col::String = "provincia"
+    protocolfolder::String = "Protocols"
+    protocols::Vector{String} = ["COMSA-FR-protocol_version-1.0_05July2017",
+        "COMSA-protocol_without-FR_version-1.1_15June2017_clean_REVISED"]
+    instrumentfolder::String = "Questionnaires"
+    instruments::Dict{String,String} = Dict("Pregnancy Version 2, June 23, 2017" => "1.Pregnancy",
+        "Pregnancy Outcome Version 2, June 23, 2017" => "2.Preg-outcome_2-23",
+        "Death Version 2, June 23, 2017" => "3.Death_2-23",
+        "Verbal and Social Autopsy - Adults" => "5a_2018_COMSA_VASA_ADULTS-EnglishOnly_01262019_clean",
+        "Verbal and Social Autopsy - Child (4 weeks to 11 years)" => "5a_2018_COMSA_VASA_CHILD-EnglishOnly_12152018Clean",
+        "Verbal and Social Autopsy - Stillbirth, Neonatal" => "5a_2018_COMSA_VASA_SB_NN-EnglishOnly_12152018Clean",
+        "Verbal and Social Autopsy - General Information" => "5a_2018_COMSA_VASA-GenInfo_English_06272018_clean",
+        "Household Members Version 2, June 23, 2017" => "Household-members_2-23")
+    variables::Vector{String} = ["Format_Comsa_death_20230308",
+        "Format_Comsa_WHO_VA_20230308"]
+    datasets::Vector{String} = ["Comsa_death_20230308",
+        "Comsa_WHO_VA_20230308"]
+    deaths::String = "Comsa_WHO_VA_20230308"
+    death_idvar::String = "comsa_id"
+    extension::String = "csv"
+    delim::Char = ','
+    quotechar::Char = '"'
+    dateformat::String = "mmm dd, yyyy"
+    decimal::Char = '.'
+end
+
+function ingest_source(source::CHAMPSSource, db::SQLite.DB, ingest::String, transformation::String, code_reference::String, author::String, description::String, dictionarypath::String)
+    db = opendatabase(dbpath, dbname)
+    try
+        champs = addsource(db, source.name)
+        add_sites(db, champs, datapath, source)
+    finally
+        close(db)
+    end
+end
+function add_sites(db::SQLite.DB, sourceid::Int64, datapath::String, source::CHAMPSSource)
+    df = read_data(joinpath(datapath,source.name,source.datafolder), source.site_data, 
+                    extension=source.extension, delim=source.delim, quotechar=source.quotechar, 
+                    dateformat=source.dateformat, decimal=source.decimal)
+    sites = combine(groupby(df, source.site_col), nrow => :n)
+    insertcols!(sites, 1, :source_id => sourceid)
+    select!(sites, site_col => ByRow(x -> x) => :name, source.site_col, :source_id)
+    savedataframe(db, sites, "sites")
+    return nothing
+end
+function add_sites(db::SQLite.DB, sourceid::Int64, datapath::String, source::CHAMPSSource)
+    df = read_data(joinpath(datapath,source.name,source.datafolder), source.site_data, 
+                    extension=source.extension, delim=source.delim, quotechar=source.quotechar, 
+                    dateformat=source.dateformat, decimal=source.decimal)
+    sites = combine(groupby(df, source.site_col), nrow => :n)
+    insertcols!(sites, 1, :source_id => sourceid)
+    select!(sites, site_col => ByRow(x -> x) => :name, source.site_col, :source_id)
+    savedataframe(db, sites, "sites")
+    return nothing
+end
 """
 Adding CHAMPS lab and tac
 
@@ -243,23 +331,26 @@ Add source `name` to the sources table, and returns the `source_id`
 """
 function addsource(db::SQLite.DB, name)
     id = getsource(db, name)
-    if ismissing(id)  # insert CHAMPS domain
+    if ismissing(id)  # insert source
         stmt = DBInterface.prepare(db, "INSERT INTO sources (name) VALUES (@name)")
         id = DBInterface.lastrowid(DBInterface.execute(stmt, (name = name)))
     end
     return id
 end
 """
-    read_champs_data(path, name)::AbstractDataFrame
+    read_data(path, name)::AbstractDataFrame
 
-Returns a DataFrame with the CHAMPS data, from the Level 2 de-identified CHAMPS data collection
+Returns a DataFrame with the data, from a data collection
+path = path to the data collection
+name = name of the data file, .csv extension assumed
 """
-function read_champs_data(path, name)::AbstractDataFrame
-    file = joinpath(path, "CHAMPS", "CHAMPS_de_identified_data", "$name.csv")
+function read_data(path, name; extension="csv", delim=',', quotechar='"', dateformat="yyyy-mm-dd", decimal='.')::AbstractDataFrame
+    #Nov 11, 2020
+    file = joinpath(path, "$name.$extension")
     if !isfile(file)
         error("File '$file' not found.")
     else
-        df = CSV.File(file; delim=',', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
+        df = CSV.File(file; delim=delim, quotechar=quotechar, dateformat=dateformat, decimal=decimal) |> DataFrame
         return df
     end
 end

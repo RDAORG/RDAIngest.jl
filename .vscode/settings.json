@@ -1,3 +1,4 @@
 {
-    "sqltools.useNodeRuntime": true
+    "sqltools.useNodeRuntime": true,
+    "julia.environmentPath": "c:\\Source\\Repos\\RDAIngest.jl"
 }
