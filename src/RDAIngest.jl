@@ -10,7 +10,8 @@ using Dates
 using Arrow
 
 export opendatabase, get_table, addsource, getsource, createdatabase, getnamedkey,
-    read_champs_data, add_champs_sites, add_champs_protocols, read_champs_variables,
+    ingest_source,
+    add_champs_sites, add_champs_protocols, read_champs_variables,
     add_dataingest, add_transformation, ingest_champs_deaths, add_champs_variables, import_champs_dataset,
     link_deathrows, ingest_champs, dataset_to_dataframe, dataset_to_arrow, dataset_to_csv, savedataframe,
     ingest_champs_labtac
@@ -34,10 +35,10 @@ Base.@kwdef struct CHAMPSSource <: AbstractSource
     site_data::String = "CHAMPS_deid_basic_demographics"
     site_col::String = "site_iso_code"
     protocolfolder::String = "Protocols"
-    protocols::Vector{String} = ["CHAMPS-Mortality-Surveillance-Protocol-v1.3",
-                                 "CHAMPS-Social-Behavioral-Science-Protocol-v1.0"]
-    instrumentfolder::String = ""
-    instruments::Dict{String,String} = Dict()
+    protocols::Dict{String, String} = Dict("CHAMPS Mortality Surveillance Protocol" => "CHAMPS-Mortality-Surveillance-Protocol-v1.3",
+                                 "CHAMPS Social Behavioral Science Protocol" => "CHAMPS-Social-Behavioral-Science-Protocol-v1.0")
+    instrumentfolder::String = "Instruments"
+    instruments::Dict{String,String} = Dict("CHAMPS Verbal Autopsy Questionnaire" => "cdc_93759_DS9.pdf")
     variables::Vector{String} = ["Format_CHAMPS_deid_basic_demographics", 
                                  "Format_CHAMPS_deid_verbal_autopsy", 
                                  "Format_CHAMPS_deid_decode_results",
@@ -62,21 +63,23 @@ Base.@kwdef struct COMSASource <: AbstractSource
     site_data::String = "Comsa_death_20230308"
     site_col::String = "provincia"
     protocolfolder::String = "Protocols"
-    protocols::Vector{String} = ["COMSA-FR-protocol_version-1.0_05July2017",
-        "COMSA-protocol_without-FR_version-1.1_15June2017_clean_REVISED"]
+    protocols::Dict{String,String} = Dict("Countrywide Mortality Surveillance for Action (COMSA) Mozambique (Formative Research)" => 
+                                          "COMSA-FR-protocol_version-1.0_05July2017.pdf",
+                                          "Countrywide Mortality Surveillance for Action (COMSA) Mozambique" => 
+                                          "COMSA-protocol_without-FR_version-1.1_15June2017_clean_REVISED.pdf")
     instrumentfolder::String = "Questionnaires"
-    instruments::Dict{String,String} = Dict("Pregnancy Version 2, June 23, 2017" => "1.Pregnancy",
-        "Pregnancy Outcome Version 2, June 23, 2017" => "2.Preg-outcome_2-23",
-        "Death Version 2, June 23, 2017" => "3.Death_2-23",
-        "Verbal and Social Autopsy - Adults" => "5a_2018_COMSA_VASA_ADULTS-EnglishOnly_01262019_clean",
-        "Verbal and Social Autopsy - Child (4 weeks to 11 years)" => "5a_2018_COMSA_VASA_CHILD-EnglishOnly_12152018Clean",
-        "Verbal and Social Autopsy - Stillbirth, Neonatal" => "5a_2018_COMSA_VASA_SB_NN-EnglishOnly_12152018Clean",
-        "Verbal and Social Autopsy - General Information" => "5a_2018_COMSA_VASA-GenInfo_English_06272018_clean",
-        "Household Members Version 2, June 23, 2017" => "Household-members_2-23")
+    instruments::Dict{String,String} = Dict("Pregnancy Version 2, June 23, 2017" => "1.Pregnancy.pdf",
+        "Pregnancy Outcome Version 2, June 23, 2017" => "2.Preg-outcome_2-23.pdf",
+        "Death Version 2, June 23, 2017" => "3.Death_2-23.pdf",
+        "Verbal and Social Autopsy - Adults" => "5a_2018_COMSA_VASA_ADULTS-EnglishOnly_01262019_clean.pdf",
+        "Verbal and Social Autopsy - Child (4 weeks to 11 years)" => "5a_2018_COMSA_VASA_CHILD-EnglishOnly_12152018Clean.pdf",
+        "Verbal and Social Autopsy - Stillbirth, Neonatal" => "5a_2018_COMSA_VASA_SB_NN-EnglishOnly_12152018Clean.pdf",
+        "Verbal and Social Autopsy - General Information" => "5a_2018_COMSA_VASA-GenInfo_English_06272018_clean.pdf",
+        "Household Members Version 2, June 23, 2017" => "Household-members_2-23.pdf")
     variables::Vector{String} = ["Format_Comsa_death_20230308",
         "Format_Comsa_WHO_VA_20230308"]
     datasets::Vector{String} = ["Comsa_death_20230308",
-        "Comsa_WHO_VA_20230308"]
+        "Comsa_WHO_VA_20230308.csv"]
     deaths::String = "Comsa_WHO_VA_20230308"
     death_idvar::String = "comsa_id"
     extension::String = "csv"
@@ -86,34 +89,38 @@ Base.@kwdef struct COMSASource <: AbstractSource
     decimal::Char = '.'
 end
 
-function ingest_source(source::CHAMPSSource, db::SQLite.DB, ingest::String, transformation::String, code_reference::String, author::String, description::String, dictionarypath::String)
+function ingest_source(source::AbstractSource, dbpath, dbname, datapath)
     db = opendatabase(dbpath, dbname)
     try
-        champs = addsource(db, source.name)
-        add_sites(db, champs, datapath, source)
+        source_id = addsource(db, source.name)
+        add_sites(source, db, source_id, datapath)
+        # Add instruments
+        # Add Protocols
+        # Add Ethics
+        # Add variables
     finally
         close(db)
     end
 end
-function add_sites(db::SQLite.DB, sourceid::Int64, datapath::String, source::CHAMPSSource)
-    df = read_data(joinpath(datapath,source.name,source.datafolder), source.site_data, 
-                    extension=source.extension, delim=source.delim, quotechar=source.quotechar, 
-                    dateformat=source.dateformat, decimal=source.decimal)
-    sites = combine(groupby(df, source.site_col), nrow => :n)
-    insertcols!(sites, 1, :source_id => sourceid)
-    select!(sites, site_col => ByRow(x -> x) => :name, source.site_col, :source_id)
+function add_sites(source::CHAMPSSource, db::SQLite.DB, sourceid::Int64, datapath::String)
+    sites = read_sitedata(source, sourceid, datapath)
+    select!(sites, source.site_col => ByRow(x -> x) => :name, source.site_col, :source_id)
     savedataframe(db, sites, "sites")
     return nothing
 end
-function add_sites(db::SQLite.DB, sourceid::Int64, datapath::String, source::CHAMPSSource)
+function add_sites(source::COMSASource, db::SQLite.DB, sourceid::Int64, datapath::String)
+    sites = read_sitedata(source, sourceid, datapath)
+    select!(sites, source.site_col => ByRow(x -> x) => :name, [] => Returns("MW") => :site_iso_code, :source_id)
+    savedataframe(db, sites, "sites")
+    return nothing
+end
+function read_sitedata(source::AbstractSource, sourceid::Int64, datapath)
     df = read_data(joinpath(datapath,source.name,source.datafolder), source.site_data, 
                     extension=source.extension, delim=source.delim, quotechar=source.quotechar, 
                     dateformat=source.dateformat, decimal=source.decimal)
     sites = combine(groupby(df, source.site_col), nrow => :n)
     insertcols!(sites, 1, :source_id => sourceid)
-    select!(sites, site_col => ByRow(x -> x) => :name, source.site_col, :source_id)
-    savedataframe(db, sites, "sites")
-    return nothing
+    return sites    
 end
 """
 Adding CHAMPS lab and tac
@@ -353,21 +360,6 @@ function read_data(path, name; extension="csv", delim=',', quotechar='"', datefo
         df = CSV.File(file; delim=delim, quotechar=quotechar, dateformat=dateformat, decimal=decimal) |> DataFrame
         return df
     end
-end
-
-"""
-    add_champs_sites(db::SQLite.DB, datapath)
-
-Add the CHAMPS sites - note, actual CHAMP sites not know - sites are just the countries the sites are in
-"""
-function add_champs_sites(db::SQLite.DB, datapath)
-    df = read_champs_data(datapath, "CHAMPS_deid_basic_demographics")
-    sites = combine(groupby(df, :site_iso_code), nrow => :n)
-    source = getsource(db, "CHAMPS")
-    insertcols!(sites, 1, :source_id => source)
-    select!(sites, :site_iso_code => ByRow(x -> x) => :name, :site_iso_code, :source_id)
-    savedataframe(db, sites, "sites")
-    return nothing
 end
 
 """
