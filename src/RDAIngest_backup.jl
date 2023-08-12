@@ -45,18 +45,7 @@ struct Vocabulary
     description::String
     items::Vector{VocabularyItem}
 end
-
-Base.@kwdef struct DataDictionary
-    domain_name::String
-    domain_description::String 
-    dictionaries::Vector{String} #list of dictionary file names 
-    dic_delim::Char = ';'
-    dic_quotechar::Char = '"'
-    dic_dateformat::String = "yyyy-mm-dd"
-    dic_decimal::Char = '.'
-end
-
-
+    
 abstract type AbstractSource end
 Base.@kwdef struct CHAMPSSource <: AbstractSource
         name::String = "CHAMPS"
@@ -90,7 +79,21 @@ Base.@kwdef struct CHAMPSSource <: AbstractSource
         ethics::Dict{String,Vector{String}} = Dict("Emory"=>["ref1","doc1"],"Emory"=>["ref2","doc2"],
                                                 "Country" => ["ref3","doc3"])
         
-        
+        # Source-released data dictionary
+        dictfolder::String = "De_identified_data"
+        dict::Vector{String} = ["CHAMPS De-Identified Data Set Description v4.2"]
+        dict_extension::String = "pdf"
+    
+        # Variables
+        variables::Vector{String} = ["Format_CHAMPS_deid_basic_demographics", 
+                                     "Format_CHAMPS_deid_verbal_autopsy", 
+                                     "Format_CHAMPS_deid_decode_results",
+                                     "Format_CHAMPS_deid_tac_results", 
+                                     "Format_CHAMPS_deid_lab_results"]
+        dic_delim::Char = ';'
+        dic_quotechar::Char = '"'
+        dic_dateformat::String = "yyyy-mm-dd"
+        dic_decimal::Char = '.'
         
         # Data
         datasets::Vector{String} = ["CHAMPS_deid_basic_demographics", 
@@ -153,31 +156,37 @@ Base.@kwdef struct COMSASource <: AbstractSource
         ethics_reference::Vector{String} = ["REF 608/CNBS/17", 
                                             "IRB#7867"]
     
-
-end
-
-
-Base.@kwdef struct Ingest
-        source_name::String
-        datafolder::String = "De_identified_data"
+        # Source-released data dictionary
+        dictfolder::String = "De_identified_data"
+        dict::Vector{String} = ["Comsa_data_dictionary_20190909"]
+        dict_extension::String = "xlsx"
+    
+        # Variables
+        variables::Vector{String} = ["Format_Comsa_WHO_VA_20230308"]
+        dic_delim::Char = ';'
+        dic_quotechar::Char = '"'
+        dic_dateformat::String = "yyyy-mm-dd"
+        dic_decimal::Char = '.'
         
-        
-        datasets::Dict{String,String} # Dictionary filename => description 
+        # Data
+        datasets::Vector{String} = ["Comsa_WHO_VA_20230308"]
+        deaths::String = "Comsa_WHO_VA_20230308"
+        death_idcol::String = "comsa_id"
         extension::String = "csv"
         delim::Char = ','
         quotechar::Char = '"'
         dateformat::String = "dd-u-yyyy" #"mmm dd, yyyy"
         decimal::Char = '.'
 
-        # Metadata
-        ingestion_desc::String 
-        transformation_desc::String
-        code_reference::String
-        author::String
-        date = today()
+        #= # Metadata
+        ingestion::String = "COMSA Level-2 Data accessed 20230518"
+        transformation::String = "Ingest of COMSA de-identified VA data"
+        code_reference::String = "Multiple dispatch testing"
+        author::String = "Yue Chu"
+        description::String = "Raw COMSA level 2 data release v20230308"
+        =#
+    
 
-        deaths::String = "CHAMPS_deid_basic_demographics"
-        death_idcol::String = "champs_deid"
 end
 
 
@@ -196,7 +205,7 @@ datapath: root folder with data from all sources [DATA_INGEST_PATH]
 """
 
 function ingest_source(source::AbstractSource, dbpath::String, dbname::String, 
-                        datapath::String)
+                        datapath::String, dictionarypath::String)
     db = opendatabase(dbpath, dbname)
     try
         source_id = add_source(source,db)
@@ -213,45 +222,17 @@ function ingest_source(source::AbstractSource, dbpath::String, dbname::String,
         # Add Ethics
         add_ethics(source, db, datapath)
 
+        # Add variables
+        add_variables(source, db, dictionarypath)
+
     finally
         close(db)
     end
 end
+
 
 """
 Step 2: 
-Ingest data dictionaries, add variables and vocabularies
-
-"""
-
-function ingest_dictionary(dict::DataDictionary, dbpath, dbname, dictionarypath)
-    db = opendatabase(dbpath, dbname)
-    try
-        # Add variables
-        add_variables(dict, db, dictionarypath)
-    finally
-        close(db)
-    end
-end
-
-
-
-"""
-Step 3: 
-Ingest deaths and population deaths table
-"""
-
-source_id = get_source(db, source.name)
-# Add metadata
-ingestion_id = add_ingestion(db, source_id, today(), ingestion)
-transformation_id = add_transformation(db, 1, 1, transformation, code_reference, today(), author)
-
-# Import deaths
-ingest_deaths(source, db, datapath, ingestion_id)
-
-
-"""
-Step 4: 
 Add ingestion and transformation info, import datasets, and link datasets to deaths
 
 ingest_data(source::AbstractSource, dbpath, dbname, datapath,
@@ -259,44 +240,7 @@ ingest_data(source::AbstractSource, dbpath, dbname, datapath,
 
 """
 
-function ingest_datasets(ingest::Ingest, dbpath::String, dbname::String, 
-    datapath::String, dictionarypath::String,
-    ingestion::String, transformation::String, 
-    code_reference::String, author::String, description::String
-    )
-db = opendatabase(dbpath, dbname)
-try
-source_id = get_source(db, ingest.source_name)
-
-# Add metadata
-ingestion_id = add_ingestion(db, source_id, today(), ingest.ingestion_desc)
-transformation_id = add_transformation(db, ingest)
-
-domain_id = get_namedkey(db, "domains", source.name, Symbol("domain_id"))
-death_idvar = get_variable(db, domain_id, source.death_idcol)
-
-# Import datasets and link to deaths
-for filename in ingest.datasets
-    # Import datasets
-    dateset_id = import_datasets(source, db, datapath, filename, 
-            transformation_id, ingestion_id, description #source.description
-            )
-
-# Link to deathrows
-link_deathrows(db, ingestion_id, dateset_id, death_idvar) 
-end
-
-finally
-close(db)
-end
-end
-
-
-
-
-
-function ingest_data(::AbstractSource, dbpath::String, dbname::String, 
-                     datapath::String, dictionarypath::String,
+function ingest_data(source::AbstractSource, dbpath::String, dbname::String, datapath::String,
                      ingestion::String, transformation::String, 
                      code_reference::String, author::String, description::String
                      )
@@ -307,10 +251,15 @@ function ingest_data(::AbstractSource, dbpath::String, dbname::String,
         # Add metadata
         ingestion_id = add_ingestion(db, source_id, today(), ingestion)
         transformation_id = add_transformation(db, 1, 1, transformation, code_reference, today(), author)
-        
-        # Import datasets and link to deaths
+        #ingestion_id = add_ingestion(db, source_id, today(), source.ingestion)
+        #transformation_id = add_transformation(db, 1, 1, source.transformation, source.code_reference, today(), source.author)
+
+        # Import deaths
+        ingest_deaths(source, db, datapath, ingestion_id)
         domain_id = get_namedkey(db, "domains", source.name, Symbol("domain_id"))
         death_idvar = get_variable(db, domain_id, source.death_idcol)
+        
+        # Import datasets and link to deaths
         for filename in source.datasets
             # Import datasets
             dateset_id = import_datasets(source, db, datapath, filename, 
@@ -630,9 +579,9 @@ end
     add_variables(source::AbstractSource, db::SQLite.DB, dictionarypath::String)
 
 """
-function add_variables(dict::DataDictionary, db::SQLite.DB, dictionarypath::String)
+function add_variables(source::AbstractSource, db::SQLite.DB, dictionarypath::String)
     
-    domain = get_domain(db, $(dict.domain_name))
+    domain = get_domain(db, source.name)
     
     if ismissing(domain)  
         # Insert domain
@@ -641,7 +590,7 @@ function add_variables(dict::DataDictionary, db::SQLite.DB, dictionarypath::Stri
         """
         stmt = DBInterface.prepare(db, sql)
         domain = DBInterface.lastrowid(DBInterface.execute(stmt, 
-                                       (name = $(dict.domain_name), description = $(dict.domain_description))))
+                                       (name = source.name, description = "$(source.name) Level2 Data")))
     end
 
     #variable insert SQL

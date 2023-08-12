@@ -66,8 +66,8 @@ function createsources(db::SQLite.DB)
     sql = raw"""
     CREATE TABLE "sites" (
     "site_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    "name" TEXT NOT NULL,
-    "site_iso_code" TEXT NOT NULL,
+    "site_name" TEXT NOT NULL,
+    "country_iso2" TEXT NOT NULL,
     "source_id" INTEGER NOT NULL,
     CONSTRAINT "fk_sites_source_id" FOREIGN KEY ("source_id") REFERENCES "sources" ("source_id") ON DELETE CASCADE ON UPDATE NO ACTION
     );
@@ -77,7 +77,7 @@ function createsources(db::SQLite.DB)
     CREATE UNIQUE INDEX "i_source_name"
     ON "sites" (
     "source_id" ASC,
-    "name" ASC
+    "site_name" ASC
     );
     """
     DBInterface.execute(db, sql)
@@ -102,6 +102,7 @@ function createprotocols(db::SQLite.DB)
     "ethics_document_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "ethics_id" INTEGER NOT NULL,
     "name" TEXT NOT NULL,
+    "description" TEXT NOT NULL,
     "document" BLOB,
     CONSTRAINT "fk_ethics_documents_ethics_id" FOREIGN KEY ("ethics_id") REFERENCES "ethics" ("ethics_id") ON DELETE CASCADE ON UPDATE NO ACTION
     );
@@ -119,6 +120,7 @@ function createprotocols(db::SQLite.DB)
     CREATE TABLE "protocols" (
     "protocol_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "name" TEXT NOT NULL,
+    "description" TEXT NOT NULL,
     "ethics_id" INTEGER,
     CONSTRAINT "fk_protocols_ethics_id" FOREIGN KEY ("ethics_id") REFERENCES "ethics" ("ethics_id") ON DELETE NO ACTION ON UPDATE NO ACTION
     );
@@ -388,7 +390,8 @@ function createinstruments(db::SQLite.DB)
     sql = raw"""
     CREATE TABLE "instruments" (
     "instrument_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    "name" TEXT NOT NULL
+    "name" TEXT NOT NULL,
+    "description" TEXT NOT NULL
     );
     """
     DBInterface.execute(db, sql)
