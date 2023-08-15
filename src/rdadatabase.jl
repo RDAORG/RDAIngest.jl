@@ -24,6 +24,7 @@ function createdatabase(path, name; replace=false)
     createdatasets(db)
     createinstruments(db)
     createdeaths(db)
+    createmapping(db)
     close(db)
 end
 """
@@ -93,7 +94,8 @@ function createprotocols(db::SQLite.DB)
     "ethics_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "name" TEXT NOT NULL,
     "ethics_committee" TEXT NOT NULL,
-    "ethics_reference" TEXT NOT NULL
+    "ethics_reference" TEXT NOT NULL,
+    CONSTRAINT "fk_ethics_ethics_id" FOREIGN KEY ("ethics_id") REFERENCES "sources" ("source_id") ON DELETE CASCADE ON UPDATE NO ACTION
     );
     """
     DBInterface.execute(db, sql)
@@ -268,6 +270,7 @@ function createvariables(db)
     "vocabulary_id" INTEGER,
     "description" TEXT,
     "note" TEXT,
+    "key" TEXT,
     CONSTRAINT "fk_variables_domain_id" FOREIGN KEY ("domain_id") REFERENCES "domains"("domain_id") ON DELETE NO ACTION ON UPDATE NO ACTION,
     CONSTRAINT "fk_variables_value_type_id" FOREIGN KEY ("value_type_id") REFERENCES "value_types"("value_type_id") ON DELETE NO ACTION ON UPDATE NO ACTION,
     CONSTRAINT "fk_variables_vocabulary_id" FOREIGN KEY ("vocabulary_id") REFERENCES "vocabularies"("vocabulary_id") ON DELETE NO ACTION ON UPDATE NO ACTION
@@ -471,4 +474,49 @@ function createdeaths(db)
     );
     """
     DBInterface.execute(db, sql)
+end
+
+
+"""
+    createmapping(db)
+
+Create tables for variable mappings: variablemappings and variablemaps
+"""
+function createmapping(db)
+    sql = raw"""
+    CREATE TABLE "variablemappings" (
+    "variablemapping_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "variablemap_id" INTEGER NOT NULL,
+    "destination_id" INTEGER NOT NULL,
+    "from_id" INTEGER NOT NULL,
+    "operator" TEXT NOT NULL,
+    "operants" TEXT NOT NULL,
+    "prerequisite_id" INTEGER,
+    CONSTRAINT "fk_variablemappings_variablemap_id" FOREIGN KEY ("variablemap_id") REFERENCES "variablemaps"("variablemap_id") ON DELETE NO ACTION ON UPDATE NO ACTION
+    CONSTRAINT "fk_variablemappings" FOREIGN KEY ("destination_id") REFERENCES "variables" ("variable_id") ON DELETE NO ACTION ON UPDATE NO ACTION,
+    CONSTRAINT "fk_variablemappings" FOREIGN KEY ("from_id") REFERENCES "variables" ("variable_id") ON DELETE NO ACTION ON UPDATE NO ACTION
+    
+    );
+    """
+    DBInterface.execute(db, sql)
+
+    sql = raw"""
+    CREATE UNIQUE INDEX "i_variablemappings_name"
+    ON "variablemappings" (
+    "variablemapping_id" ASC,
+    "variablemap_id" ASC
+    );
+    """
+    DBInterface.execute(db, sql)
+    
+    sql = raw"""
+    CREATE TABLE "variablemaps" (
+    "variablemap_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "name" TEXT,
+    "instrument_id" INTEGER,
+    CONSTRAINT "fk_variablemaps_instrument_id" FOREIGN KEY ("instrument_id") REFERENCES "instruments" ("instrument_id") ON DELETE NO ACTION ON UPDATE NO ACTION
+    );
+    """
+    DBInterface.execute(db, sql)
+    
 end
