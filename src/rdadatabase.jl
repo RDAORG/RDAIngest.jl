@@ -24,7 +24,7 @@ function createdatabase(path, name; replace=false)
     createdatasets(db)
     createinstruments(db)
     createdeaths(db)
-    createmapping(db)
+    createmapping(db) 
     close(db)
 end
 """
@@ -480,43 +480,45 @@ end
 """
     createmapping(db)
 
-Create tables for variable mappings: variablemappings and variablemaps
+Create the table required for variable mapping. This table is used to map variables from one instrument to another. The table is created in the database provided as an argument.
+The variable mapping is based on the PyCrossVA approach.
+
+The relationship to the PyCrossVA configuration file columns:
+
+  * New Column Name = destination_id - the variable_id of the new column
+  * New Column Documentation = Stored in the variable table
+  * Source Column ID = from_id - the variable_id of the source variable
+  * Source Column Documentation = will be in the variables table
+  * Relationship = operator - the operator to be used to create the new variable
+  * Condition = operants - the operants to be used with the operator
+  * Prerequisite = prerequisite_id - the variable_id of the prerequisite variable
+
 """
 function createmapping(db)
     sql = raw"""
-    CREATE TABLE "variablemappings" (
-    "variablemapping_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    "variablemap_id" INTEGER NOT NULL,
-    "destination_id" INTEGER NOT NULL,
-    "from_id" INTEGER NOT NULL,
-    "operator" TEXT NOT NULL,
-    "operants" TEXT NOT NULL,
-    "prerequisite_id" INTEGER,
-    CONSTRAINT "fk_variablemappings_variablemap_id" FOREIGN KEY ("variablemap_id") REFERENCES "variablemaps"("variablemap_id") ON DELETE NO ACTION ON UPDATE NO ACTION
-    CONSTRAINT "fk_variablemappings" FOREIGN KEY ("destination_id") REFERENCES "variables" ("variable_id") ON DELETE NO ACTION ON UPDATE NO ACTION,
-    CONSTRAINT "fk_variablemappings" FOREIGN KEY ("from_id") REFERENCES "variables" ("variable_id") ON DELETE NO ACTION ON UPDATE NO ACTION
-    
+        CREATE TABLE IF NOT EXISTS "variablemaps" (
+            "variablemap_id"	INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            "name"	TEXT NOT NULL,
+            "instrument_id"	INTEGER NULL,
+            CONSTRAINT "fk_variablemaps_instruments" FOREIGN KEY("instrument_id") REFERENCES "instruments"("instrument_id")
+        );
+    """
+    DBInterface.execute(db, sql)
+    sql = raw"""
+    CREATE TABLE IF NOT EXISTS variablemappings (
+        variablemapping_id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        variablemap_id INTEGER NOT NULL,
+        destination_id INTEGER NOT NULL,
+        from_id INTEGER NULL,
+        operator TEXT NULL,
+        operants TEXT NULL,
+        prerequisite_id INTEGER NULL,
+        CONSTRAINT fk_variablemappings_variablemap_id FOREIGN KEY (variablemap_id) REFERENCES variablemaps (variablemap_id),
+        CONSTRAINT fk_variablemappings_destination_id FOREIGN KEY (destination_id) REFERENCES variables (variable_id),
+        CONSTRAINT fk_variablemappings_from_id FOREIGN KEY (from_id) REFERENCES variables (variable_id),
+        CONSTRAINT fk_variablemappings_prerequisite_id FOREIGN KEY (prerequisite_id) REFERENCES variables (variable_id)
     );
     """
     DBInterface.execute(db, sql)
 
-    sql = raw"""
-    CREATE UNIQUE INDEX "i_variablemappings_name"
-    ON "variablemappings" (
-    "variablemapping_id" ASC,
-    "variablemap_id" ASC
-    );
-    """
-    DBInterface.execute(db, sql)
-    
-    sql = raw"""
-    CREATE TABLE "variablemaps" (
-    "variablemap_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    "name" TEXT,
-    "instrument_id" INTEGER,
-    CONSTRAINT "fk_variablemaps_instrument_id" FOREIGN KEY ("instrument_id") REFERENCES "instruments" ("instrument_id") ON DELETE NO ACTION ON UPDATE NO ACTION
-    );
-    """
-    DBInterface.execute(db, sql)
-    
 end

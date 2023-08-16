@@ -24,6 +24,7 @@ source = CHAMPSSource()
 # Step 2: Ingest data dictionaries, add variables and vocabularies
 CHAMPSdict = AbstractDictionary(
     domain_name="CHAMPS",
+    domain_description = "Raw CHAMPS level-2 deidentified data",
     dictionaries=["Format_CHAMPS_deid_basic_demographics", 
     "Format_CHAMPS_deid_verbal_autopsy", 
     "Format_CHAMPS_deid_decode_results",
@@ -44,25 +45,58 @@ CHAMPSIngest = Ingest(source_name = "CHAMPS",
                 "CHAMPS deid verbal autopsy" => "CHAMPS_deid_verbal_autopsy", 
                 "CHAMPS deid decode results" => "CHAMPS_deid_decode_results",
                 "CHAMPS deid tac results" => "CHAMPS_deid_tac_results", 
-                "CHAMPS deid lab results" => "CHAMPS_deid_lab_results"),
+                "CHAMPS deid lab results" => "CHAMPS_deid_lab_results"
+                ),
                 delim = ',',
                 quotechar = '"',
                 dateformat = "yyyy-mm-dd",
                 decimal = '.',
-                ingest_desc = "Ingest raw CHAMPS Level-2 Data accessed 20230518",
+                ingest_desc = "Raw CHAMPS Level-2 Data accessed 20230518",
                 transform_desc = "Ingest of CHAMPS Level-2 Data",
-                code_reference = "multiple dispatch testing",
-                author = "YC"
+                code_reference = "Multiple dispatch testing",
+                author = "YUE CHU"
                 )
                 
 meta_info = ingest_deaths(CHAMPSIngest, ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_INGEST_PATH"])
 
 # Step 4: Import datasets, and link datasets to deaths
 
-@time ingest_datasets(CHAMPSIngest, ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_INGEST_PATH"],
+@time ingest_data(CHAMPSIngest, ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_INGEST_PATH"],
                 meta_info["transformation_id"], meta_info["ingestion_id"])
 
+#=
+# Step 4.1: Test adding more datasets later without ingesting deaths first
+CHAMPSIngest1 = Ingest(source_name = "CHAMPS",
+                datafolder = "De_identified_data",
+                death_file = "CHAMPS_deid_basic_demographics",
+                death_idcol = "champs_deid",
+                site_col = "site_iso_code",
+                datasets = Dict("CHAMPS deid tac results" => "CHAMPS_deid_tac_results", 
+                "CHAMPS deid lab results" => "CHAMPS_deid_lab_results"),
+                ingest_desc = "Ingest 2",
+                transform_desc = "Ingest 2",
+                code_reference = "step testing",
+                author = "YC"
+                )
 
+db = opendatabase(ENV["RDA_DATABASE_PATH"], dbname)
+source_id = get_source(db, CHAMPSIngest1.source_name)
+ingestion_id = add_ingestion(db, source_id, today(), CHAMPSIngest1.ingest_desc)
+transformation_id = add_transformation(db, 1, 1, CHAMPSIngest1.transform_desc, 
+                                        CHAMPSIngest1.code_reference, today(), CHAMPSIngest1.author)
+@time ingest_data(CHAMPSIngest1, ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_INGEST_PATH"],
+                transformation_id,ingestion_id)
+
+# check data
+check = dataset_to_dataframe(db, get_namedkey(db, "datasets", "CHAMPS_deid_tac_results", "dataset_id"))
+check = dataset_to_dataframe(db, get_namedkey(db, "datasets", "CHAMPS_deid_lab_results", "dataset_id"))
+
+check = DBInterface.execute(db, "SELECT * FROM death_rows") |> DataFrame
+nrow(check)
+check = DBInterface.execute(db, "SELECT dataset_id, COUNT(*) As n FROM datarows GROUP BY dataset_id") |> DataFrame
+print(check)
+=#
+            
 
 """
 INGEST COMSA DATA
@@ -99,7 +133,5 @@ meta_info = ingest_deaths(COMSAIngest2,ENV["RDA_DATABASE_PATH"], dbname, ENV["DA
 
 # Step 4: Import datasets, and link datasets to deaths
 
-@time ingest_datasets(COMSAIngest2, ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_INGEST_PATH"],
+@time ingest_data(COMSAIngest2, ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_INGEST_PATH"],
                 meta_info["transformation_id"], meta_info["ingestion_id"])
-
-

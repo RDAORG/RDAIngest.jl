@@ -13,13 +13,13 @@ using DataStructures
 using XLSX
 
 export AbstractSource, CHAMPSSource, COMSASource, AbstractDictionary, Ingest,
-    ingest_source, ingest_dictionary, ingest_deaths, ingest_datasets,
+    ingest_source, ingest_dictionary, ingest_deaths, ingest_data,
 
     add_source, get_source, get_namedkey, get_variable, 
     add_domain, get_domain, 
     add_sites, read_sitedata, add_protocols, add_instruments, add_ethics, 
     add_variables, add_vocabulary, read_variables, get_vocabulary,
-    import_datasets, link_deathrows, dataset_in_ingest, 
+    import_datasets, link_deathrows, death_in_ingest, dataset_in_ingest, 
     add_ingestion, add_transformation, add_dataset_ingestion, add_transformation_output,
     
     add_data_column, lookup_variables, 
@@ -285,10 +285,12 @@ function ingest_deaths(ingest::Ingest, dbpath::String, dbname::String, datapath:
     try
     source_id = get_source(db, ingest.source_name)
 
+    # Add ingestion and transformation info
     ingestion_id = add_ingestion(db, source_id, today(), ingest.ingest_desc)
     transformation_id = add_transformation(db, 1, 1, ingest.transform_desc, #type=1, status=1
                                             ingest.code_reference, today(), ingest.author)
 
+    # Ingest deaths
     deaths = read_data(DocCSV(joinpath(datapath,ingest.source_name,ingest.datafolder),
                           ingest.death_file,
                           ingest.delim, ingest.quotechar, ingest.dateformat, ingest.decimal))
@@ -302,7 +304,8 @@ function ingest_deaths(ingest::Ingest, dbpath::String, dbname::String, datapath:
                   "deaths")
 
     println("Death data $(ingest.death_file) ingested.")
-    return Dict("ingestion_id"=>ingestion_id,"transformation_id"=>transformation_id)
+    return Dict("ingestion_id" => ingestion_id ,
+                "transformation_id" => transformation_id)
 
     finally
         close(db)
@@ -314,29 +317,57 @@ end
 Step 4: 
 Import datasets, and link datasets to deaths
 
-ingest_datasets(ingest::Ingest, dbpath::String, dbname::String, datapath::String,
+ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::String,
                         transformation_id::Int64, ingestion_id::Int64)
 # transformation_id and ingestion_id can be from step 3 outputs. 
 # If only importing dataset without ingesting deaths, run add_ingestion() and add_transformation() to get ids.
 """
 
-function ingest_datasets(ingest::Ingest, dbpath::String, dbname::String, datapath::String,
-                        transformation_id::Int64, ingestion_id::Int64)
+function ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::String,
+                        transformation_id::Int64, ingestion_id::Int64, death_ingestion_id=nothing)
     db = opendatabase(dbpath, dbname)
     try
+        source = get_source(db, ingest.source_name)
         domain = get_domain(db, ingest.source_name)
         death_idvar = get_variable(db, domain, ingest.death_idcol)
 
         for (key, value) in ingest.datasets
-            
+
             # Import datasets
-            dateset_id = import_datasets(db, datapath, 
+            dataset_id = import_datasets(db, datapath, 
                     ingest, "$value", "$key",
                     domain, transformation_id, ingestion_id)
 
             # Link to deathrows
-            link_deathrows(db, ingestion_id, dateset_id, death_idvar) 
-            println("Dataset $value linked to deathrows.")
+            if !dataset_in_ingest(db, dataset_id, ingestion_id) #probably don't need this??
+                error("Dataset $dataset_id not part of data ingest $ingestion_id")
+            end
+
+            if !death_in_ingest(db,ingestion_id)
+                println("Death data is not part of currrent data ingest $ingestion_id")
+                if death_ingestion_id===nothing
+                    source_ingests = DBInterface.execute(db, "SELECT data_ingestion_id FROM data_ingestions WHERE source_id = $source") |>DataFrame
+                    
+                    sql = """
+                    SELECT data_ingestion_id, COUNT(*) As n 
+                    FROM deaths 
+                    WHERE data_ingestion_id IN ($(join(source_ingests.data_ingestion_id, ",")))
+                    GROUP BY data_ingestion_id
+                    """
+                    death_ingests = DBInterface.execute(db, sql) |>DataFrame 
+                    if nrow(death_ingests) > 0 && any(x -> x > 0, death_ingests.n)
+                        death_ingestion_id = death_ingests.data_ingestion_id[death_ingests.n .>0][end]
+                        println("Death ingestion id not specified. By default, use lastest ingested deaths from source $(ingest.source_name) from ingestion id $death_ingestion_id.")
+                    else
+                        error("Death from source $(ingest.source_name) hasn't been ingested.")
+                    end
+                end
+            else
+                death_ingestion_id = ingestion_id
+            end
+            link_deathrows(db, death_ingestion_id, dataset_id, death_idvar)
+
+            println("Dataset $value imported and linked to deathrows.")
         end
 
     finally
@@ -830,50 +861,52 @@ Insert datasets into SQLite db and returns the datatset_id
 function import_datasets(db::SQLite.DB, datapath::String,
     ingest::Ingest, filename::String, description::String,
     domain_id::Int64,transformation_id::Int64, ingestion_id::Int64)::Int64
-try
-    SQLite.transaction(db)
+    try
+        SQLite.transaction(db)
 
-    data = read_data(DocCSV(joinpath(datapath,ingest.source_name,ingest.datafolder),filename,
-                            ingest.delim,ingest.quotechar,ingest.dateformat,ingest.decimal))
+        data = read_data(DocCSV(joinpath(datapath,ingest.source_name,ingest.datafolder),filename,
+                                ingest.delim,ingest.quotechar,ingest.dateformat,ingest.decimal))
 
-    variables = lookup_variables(db, names(data), domain_id)
-    var_lookup = Dict{String,Int64}(zip(variables.name, variables.variable_id))
-    sql = """
-    INSERT INTO datasets(name, date_created, description) 
-    VALUES (@name, @date_created, @description);
-    """
-    stmt = DBInterface.prepare(db, sql)
-    dataset_id = DBInterface.lastrowid(DBInterface.execute(stmt, (name=filename, date_created=Dates.format(today(), "yyyy-mm-dd"), description=description)))
+        variables = lookup_variables(db, names(data), domain_id)
+        var_lookup = Dict{String,Int64}(zip(variables.name, variables.variable_id))
+        sql = """
+        INSERT INTO datasets(name, date_created, description) 
+        VALUES (@name, @date_created, @description);
+        """
+        stmt = DBInterface.prepare(db, sql)
+        dataset_id = DBInterface.lastrowid(DBInterface.execute(stmt, (name=filename, date_created=Dates.format(today(), "yyyy-mm-dd"), description=description)))
 
-    add_dataset_ingestion(db, dataset_id, transformation_id, ingestion_id)
-    add_transformation_output(db, dataset_id, transformation_id)
+        add_dataset_ingestion(db, dataset_id, transformation_id, ingestion_id)
+        add_transformation_output(db, dataset_id, transformation_id)
 
-    savedataframe(db, select(variables, [] => Returns(dataset_id) => :dataset_id, :variable_id), "dataset_variables")
+        savedataframe(db, select(variables, [] => Returns(dataset_id) => :dataset_id, :variable_id), "dataset_variables")
 
-    #store datarows
-    stmt = DBInterface.prepare(db, "INSERT INTO datarows (dataset_id) VALUES(@dataset_id);")
-    for i = 1:nrow(data)
-        DBInterface.execute(stmt, (dataset_id = dataset_id))
-    end
+        #store datarows
+        stmt = DBInterface.prepare(db, "INSERT INTO datarows (dataset_id) VALUES(@dataset_id);")
+        for i = 1:nrow(data)
+            DBInterface.execute(stmt, (dataset_id = dataset_id))
+        end
 
-    #prepare data for storage
-    datarows = DBInterface.execute(db, "SELECT row_id FROM datarows WHERE dataset_id = $dataset_id;") |> DataFrame
-    d = hcat(datarows, data, makeunique=true, copycols=false) #add the row_id to each row of data
-    #store whole column at a time
-    for col in propertynames(data)
-        variable_id = var_lookup[string(col)]
-        coldata = select(d, :row_id, col => :value; copycols=false)
-        add_data_column(db, variable_id, coldata)
-    end
-    SQLite.commit(db)
-    return dataset_id
+        #prepare data for storage
+        datarows = DBInterface.execute(db, "SELECT row_id FROM datarows WHERE dataset_id = $dataset_id;") |> DataFrame
+        d = hcat(datarows, data, makeunique=true, copycols=false) #add the row_id to each row of data
+        #store whole column at a time
+        for col in propertynames(data)
+            variable_id = var_lookup[string(col)]
+            coldata = select(d, :row_id, col => :value; copycols=false)
+            add_data_column(db, variable_id, coldata)
+        end
+        SQLite.commit(db)
+        
+        return dataset_id
+
+        println("Dataset $filename ingested.")
 
     catch e
         SQLite.rollback(db)
         throw(e)
     end
 
-    println("Dataset $filename ingested.")
 end
 
 
@@ -919,25 +952,41 @@ Insert records into `deathrows` table to link dataset `dataset_id` to `deaths` t
 `death_identifier` is the variable in the dataset that corresponds to the `external_id` of the death.
 """
 function link_deathrows(db::SQLite.DB, ingestion_id, dataset_id, death_identifier)
-    if !dataset_in_ingest(db, dataset_id, ingestion_id)
-        error("Dataset $dataset_id not part of data ingest $ingestion_id")
-    end
-    sql = """
-    INSERT OR IGNORE INTO death_rows (death_id, row_id)
-    SELECT
-        d.death_id,
-        data.row_id
-    FROM deaths d
-        JOIN data ON d.external_id = data.value
-        JOIN datarows r ON data.row_id = r.row_id
-    WHERE d.data_ingestion_id = @ingestion_id
-       AND data.variable_id = @death_identifier
-       AND r.dataset_id = @dataset_id
-    """
-    stmt = DBInterface.prepare(db, sql)
-    DBInterface.execute(stmt, (ingestion_id=ingestion_id, death_identifier=death_identifier, dataset_id=dataset_id))
+
+        sql = """
+        INSERT OR IGNORE INTO death_rows (death_id, row_id)
+        SELECT
+            d.death_id,
+            data.row_id
+        FROM deaths d
+            JOIN data ON d.external_id = data.value
+            JOIN datarows r ON data.row_id = r.row_id
+        WHERE d.data_ingestion_id = @ingestion_id
+        AND data.variable_id = @death_identifier
+        AND r.dataset_id = @dataset_id
+        """
+        stmt = DBInterface.prepare(db, sql)
+        DBInterface.execute(stmt, (ingestion_id=ingestion_id, death_identifier=death_identifier, dataset_id=dataset_id))
+    
     return nothing
 end
+
+"""
+death_in_ingest(db, ingestion_id)
+
+If ingested deaths are part of ingestion_id
+"""
+
+function death_in_ingest(db, ingestion_id)
+    sql = """
+        SELECT COUNT(*) n FROM deaths
+        WHERE data_ingestion_id = @ingestion_id;
+    """
+    stmt = DBInterface.prepare(db, sql)
+    df = DBInterface.execute(stmt, (ingestion_id=ingestion_id)) |> DataFrame
+    return nrow(df) > 0 && df[1, :n] > 0
+end
+
 
 """
 dataset_in_ingest(db, dataset_id, ingestion_id)
