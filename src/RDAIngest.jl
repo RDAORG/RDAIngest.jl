@@ -661,7 +661,7 @@ Add variables from a variable dataframe to variables table
 function add_variables(variables::AbstractDataFrame, db::SQLite.DB, domain_id::Int64)
     
     # Check if variables dataframe has all required columns
-    required_columns = ["Column_Name", "DataType","Description","Note"]
+    required_columns = ["Column_Name", "DataType","Description","Note","Vocabulary"]
     missing_columns = filter(col -> !(col in names(variables)), required_columns)
     if !isempty(missing_columns)
         error("Variables dataframe missing columns: ", join(missing_columns, ", "))
