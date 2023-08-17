@@ -500,8 +500,8 @@ function createmapping(db)
             "variablemap_id"	INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
             "name"	TEXT NOT NULL,
             "instrument_id"	INTEGER NULL,
-            "input_format" TEXT NOT NULL,
-            "output_format" TEXT NOT NULL,
+            "source_domain" TEXT NULL,
+            "destination_domain" TEXT NULL,
             CONSTRAINT "fk_variablemaps_instruments" FOREIGN KEY("instrument_id") REFERENCES "instruments"("instrument_id")
         );
     """

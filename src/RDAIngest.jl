@@ -248,11 +248,13 @@ function ingest_dictionary(dict::AbstractDictionary, dbpath::String, dbname::Str
     db = opendatabase(dbpath, dbname)
 
     try
-        domain = add_domain(db, dict.domain_name)
+        domain = add_domain(db, dict.domain_name, dict.domain_name)
 
         # Add variables
         for filename in dict.dictionaries
-            add_variables(dict, db, dictionarypath, domain, filename)
+            variables = read_variables(dict,dictionarypath,filename)
+            add_variables(variables, db, domain)
+            println("Variables from $filename ingested.")
         end
 
         ##= 
@@ -651,13 +653,21 @@ end
 
 
 """
-add_variables(dict::AbstractDictionary,db::SQLite.DB, dictionarypath::String,domain::Int64, dictionaryname::String)
+add_variables(variables::AbstractDataFrame, db::SQLite.DB, domain_id::Int64)
 
+Add variables from a variable dataframe to variables table
 """
-function add_variables(dict::AbstractDictionary,db::SQLite.DB, dictionarypath::String, 
-                       domain::Int64, dictionaryname::String)
+
+function add_variables(variables::AbstractDataFrame, db::SQLite.DB, domain_id::Int64)
     
-    #variable insert SQL
+    # Check if variables dataframe has all required columns
+    required_columns = ["Column_Name", "DataType","Description","Note"]
+    missing_columns = filter(col -> !(col in names(variables)), required_columns)
+    if !isempty(missing_columns)
+        error("Variables dataframe missing columns: ", join(missing_columns, ", "))
+    end
+
+    # Variable insert SQL
     sql = raw"""
     INSERT INTO variables (domain_id, name, value_type_id, vocabulary_id, description, note)
     VALUES (@domain_id, @name, @value_type_id, @vocabulary_id, @description, @note)
@@ -670,8 +680,7 @@ function add_variables(dict::AbstractDictionary,db::SQLite.DB, dictionarypath::S
     stmt = DBInterface.prepare(db, sql)
 
     # Add variables
-    variables = read_variables(dict,dictionarypath,dictionaryname)
-    insertcols!(variables, 1, :domain_id => domain)
+    insertcols!(variables, 1, :domain_id => domain_id)
 
         for row in eachrow(variables)
             id = missing
@@ -682,8 +691,6 @@ function add_variables(dict::AbstractDictionary,db::SQLite.DB, dictionarypath::S
                                         value_type_id=row.DataType, vocabulary_id=id, 
                                         description=row.Description, note=row.Note))
         end
-
-    println("Variables from $dictionaryname ingested.")
 
     return nothing
 end
