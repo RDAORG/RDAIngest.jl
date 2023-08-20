@@ -4,7 +4,7 @@ using DataFrames
 using Dates
 using BenchmarkTools
 using SQLite
-#using RDAIngest #just run the codes in RDAIngest.jl 
+using RDAIngest #just run the codes in RDAIngest.jl / rdadatabase.jl 
 
 
 #get environment variables
@@ -23,6 +23,7 @@ finally
     close(db)
 end
 
-
 DBInterface.execute(db, "SELECT * FROM value_types";) |> DataFrame
+
+df1=DBInterface.execute(db, "SELECT * FROM vocabularies";) |> DataFrame
 
