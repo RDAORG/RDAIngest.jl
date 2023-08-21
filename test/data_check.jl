@@ -1,6 +1,6 @@
-# Trials for data quality check 
+# Data quality check 
 # Young 
-# Updated: Aug 21 2023
+# Last Updated: Aug 21 2023
 
 using ConfigEnv
 using DBInterface
@@ -16,13 +16,13 @@ using CSV
 #get environment variables
 dotenv()
 
-#outputdatasets
+#Get the DB in SQL outputdatasets 
 db = opendatabase(ENV["RDA_DATABASE_PATH"], "RDA")
 
 # Example codes to get the dataset to dataframe
 DBInterface.execute(db, "SELECT * FROM value_types";) |> DataFrame
 
-# Set up the CHAMPS verbal autopsy dataset
+# Set up the [CHAMPS verbal autopsy dataset]
 
 # Query data for rows with dataset_id = 2
 data_query = """
@@ -43,15 +43,16 @@ champs_vars = DBInterface.execute(db, variables_query)|> DataFrame
 # Merge data_df with variables_df based on variable_id
 champs_df1 = innerjoin(champs_data, champs_vars, on = :variable_id)
 
+# Long to Wide format based on unique row ID and variable name
 champs_df2 = unstack(champs_df1, :row_id,  :name, :value)
 
-names(champs_df2)
+names(champs_df2) # 457 variables 
 
-# Save the DataFrame to a CSV file
+# Save the DataFrame to a CSV file to view the dataframe
 CSV.write("champs_df2.csv", champs_df2)
 
 # Check the unique values of each variable ()
-unique(champs_df2[!, "Id10104"])
+unique(champs_df2[!, "Id10358"])
 
 "# Problematic variables from 457 variables
 fix type: ["Id10024", "Id10248","Id10250","Id10262","Id10266","Id10352"] 
@@ -60,26 +61,55 @@ Surely need to clean values: ["Id10106", "Id10108", "Id10161_0","Id10161_1","Id1
                ] 
 "
 
-# Every string variable should be in the lowercase, 
+# CLEAN THE DATA 
+
+# STEP 1. Every string variable should be in the lowercase.
 
 # Create a copy of the original DataFrame
 champs_df3 = copy(champs_df2)
-
-# Loop through each column in the copy
-for col in eachcol(champs_df3)
-    if eltype(col) <: String
-        col .= lowercase.(col)
-    end
-end
 
 # Check the datatypes for each column
 for col_name in names(champs_df3)
     col = champs_df3[!, col_name]
     println("$col_name: $(eltype(col))")
 end
-# Save the DataFrame to a CSV file
 
+# Loop through each column in the copy
+for col_name in names(champs_df3)
+    col = champs_df3[!, col_name]
+    col_type = eltype(col)
+    if col_type == Union{Missing, String}
+        champs_df3[!, col_name] .= map(x -> x isa Missing ? x : lowercase(x), col)
+    end
+end
+
+# Save the DataFrame to a CSV file to check the dataframe
 CSV.write("champs_df3.csv", champs_df3)
+
+# STEP 2. Make the "DK" mising data consistent
+# Check the unique values of each variable and get the frequency
+unique(champs_df3[!, "Id10186"])
+
+# Define a function to replace "does not know" and "doesn't know" with "dk"
+replace_dk(text) = lowercase(text) == "does not know" || lowercase(text) == "doesn't know" ? "dk" : text
+
+# Loop through each data column
+for col_name in names(your_df)
+    col = your_df[!, col_name]
+    if eltype(col) <: String
+        your_df[!, col_name] .= replace_dk.(col)
+    end
+end
+
+
+
+
+
+
+
+
+
+
 
 
 
