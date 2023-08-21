@@ -50,8 +50,40 @@ names(champs_df2)
 # Save the DataFrame to a CSV file
 CSV.write("champs_df2.csv", champs_df2)
 
+# Check the unique values of each variable ()
+unique(champs_df2[!, "Id10104"])
 
-######################################
+"# Problematic variables from 457 variables
+fix type: ["Id10024", "Id10248","Id10250","Id10262","Id10266","Id10352"] 
+Surely need to clean values: ["Id10106", "Id10108", "Id10161_0","Id10161_1","Id10162","Id10202","Id10221",
+               "Id10285","Id10358","Id10359","Id10367","Id10379","Id10380","Id10382","Id10392","Id10394"
+               ] 
+"
+
+# Every string variable should be in the lowercase, 
+
+# Create a copy of the original DataFrame
+champs_df3 = copy(champs_df2)
+
+# Loop through each column in the copy
+for col in eachcol(champs_df3)
+    if eltype(col) <: String
+        col .= lowercase.(col)
+    end
+end
+
+# Check the datatypes for each column
+for col_name in names(champs_df3)
+    col = champs_df3[!, col_name]
+    println("$col_name: $(eltype(col))")
+end
+# Save the DataFrame to a CSV file
+
+CSV.write("champs_df3.csv", champs_df3)
+
+
+
+##Data type####################################
 """
     get_datatype(db::SQLite.DB, domain)::AbstractDataFrame
 
@@ -66,7 +98,6 @@ function get_datatype(db::SQLite.DB, dataset_id)::AbstractDataFrame
     sql = """
 
           SELECT variable_id, name, value_type_id FROM variables
-
           WHERE variable_id IN ($(join(var_ids.variable_id, ",")));
 
       """
@@ -74,3 +105,49 @@ function get_datatype(db::SQLite.DB, dataset_id)::AbstractDataFrame
     return DBInterface.execute(db, sql) |> DataFrame
 
 end
+
+get_datatype(db, 2)
+
+
+
+for col in var_type.name[(var_type.value_type_id .== 1)]
+
+            if eltype(df[!, col]) == Union{Missing, String}
+
+                df[!, col] = [ismissing(x) ? missing : parse.(Float64,x) for x in df[!, col]]
+
+            end
+
+            df[!, col] = [ismissing(x) ? missing : convert.(Int,x) for x in df[!, col]]
+
+        end
+
+        for col in var_type.name[(var_type.value_type_id .== 2)]
+
+            df[!, col] = [ismissing(x) ? missing : convert.(Float64,x) for x in df[!, col]]
+
+        end
+
+        for col in var_type.name[(var_type.value_type_id .== 3)]
+
+            df[!, col] = [ismissing(x) ? missing : lowercase(x) for x in df[!, col]]
+
+        end
+
+        for col in var_type.name[(var_type.value_type_id .== 4)]
+
+            df[!, col] = [ismissing(x) ? missing : Date(x) for x in df[!, col]]
+
+        end
+
+        for col in var_type.name[(var_type.value_type_id .== 5)]
+
+            df[!, col] = [ismissing(x) ? missing : Dates.format(x, "yyyy-mm-ddTHH:mm:ss.sss") for x in df[!, col]]
+
+        end
+
+        for col in var_type.name[(var_type.value_type_id .== 6)]
+
+            df[!, col] = [ismissing(x) ? missing : Dates.format(x, "HH:mm:ss.sss") for x in df[!, col]]
+
+        end
