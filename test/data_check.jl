@@ -9,7 +9,8 @@ using Dates
 using BenchmarkTools
 using SQLite
 using RDAIngest #just run the codes in RDAIngest.jl / rdadatabase.jl 
-
+using Dates
+using Arrow
 
 #get environment variables
 dotenv()
