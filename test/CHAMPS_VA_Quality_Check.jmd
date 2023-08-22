@@ -5,8 +5,8 @@ date: Aug 22nd 2023
 -->
 
 ## CHAMPS Verbal Autopsy Data Quality Check
-###### Yoonyoung Choi
-###### Aug 22nd 2023
+##### Yoonyoung Choi
+##### Aug 22nd 2023
 
 
 Using the dataset *"CHAMPS_ deid_verbal_autopsy"*, the data quality check to discuss further process. 
@@ -18,7 +18,7 @@ If you're viewing the published version have a look at the
 
 
 <!-- NOT appeared this setup dependencies and datasetup -->
-```julia; echo = false; results = "hidden"
+```julia
 using CSV
 using DataFrames
 "FreqTables" ∉ keys(Pkg.project().dependencies) && Pkg.add("FreqTables")
