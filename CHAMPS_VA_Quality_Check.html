@@ -665,12 +665,13 @@ author : Young
 date: Aug 22nd 2023
  -->
 
-<h1>CHAMPS Verbal Autopsy Data Quality Check</h1>
-<p>created by Yoonyoung Choi Aug 22nd 2023</p>
+<h2>CHAMPS Verbal Autopsy Data Quality Check</h2>
+<h5>created by Yoonyoung Choi</h5>
+<h5>Aug 22nd 2023</h5>
 <p>Using the dataset <em>&quot;CHAMPS_ deid<em>verbal</em>autopsy&quot;</em>, the data quality check to discuss further process. </p>
 <p>Notice that you don&#39;t need to define chunk options, but you can using <code>#&#43;</code>. just before code e.g. <code>#&#43; term&#61;True, caption&#61;&#39;Fancy plots.&#39;</code>. If you&#39;re viewing the published version have a look at the <a href="FIR_delibGR.sosign_plots.jl">source</a> to see the markup.</p>
 
-<!--  this setup dependencies, but doesn't appear in the generated document  -->
+<!--  NOT appeared this setup dependencies and datasetup  -->
 
 
 
@@ -681,7 +682,7 @@ date: Aug 22nd 2023
 
 
 <pre class='hljl'>
-<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_df2</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10186&quot;</span><span class='hljl-p'>)</span>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10186&quot;</span><span class='hljl-p'>)</span>
 </pre>
 
 
@@ -695,7 +696,7 @@ ERROR: UndefVarError: freqtable not defined
 
 
 <pre class='hljl'>
-<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_df2</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10193&quot;</span><span class='hljl-p'>)</span>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10193&quot;</span><span class='hljl-p'>)</span>
 </pre>
 
 
