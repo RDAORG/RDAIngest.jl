@@ -55,12 +55,12 @@ CSV.write("champs_df2.csv", champs_df2)
 # Check the unique values of each variable ()
 unique(champs_df2[!, "Id10358"])
 
-"# Problematic variables from 457 variables
+"""# Problematic variables from 457 variables
 fix type: ["Id10024", "Id10248","Id10250","Id10262","Id10266","Id10352"] 
 Surely need to clean values: ["Id10106", "Id10108", "Id10161_0","Id10161_1","Id10162","Id10202","Id10221",
                "Id10285","Id10358","Id10359","Id10367","Id10379","Id10380","Id10382","Id10392","Id10394"
                ] 
-"
+"""
 
 # CLEAN THE DATA 
 
@@ -115,9 +115,19 @@ CSV.write("champs_df3.csv", champs_df3)
 
 ## STEP 3: make 
 
+# TEST #################################
+using CSV
+using DataFrames
+"FreqTables" ∉ keys(Pkg.project().dependencies) && Pkg.add("FreqTables")
+using FreqTables
+filename = "champs_df2"
+path = "/Users/young/Documents/GitHub/RDAIngest.jl/"
+file = joinpath(path, "$filename.csv")
+champs_raw = CSV.File(file; delim=',', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
 
+freqtable(champs_raw, :"Id10186")
 
-
+freqtable(champs_raw, :"Id10193")
 
 
 
