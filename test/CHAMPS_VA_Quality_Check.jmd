@@ -5,8 +5,9 @@ date: Aug 22nd 2023
 -->
 
 # CHAMPS Verbal Autopsy Data Quality Check
-### created by Yoonyoung Choi
-### Aug 22nd 2023
+created by Yoonyoung Choi
+Aug 22nd 2023
+
 
 Using the dataset *"CHAMPS_ deid_verbal_autopsy"*, the data quality check to discuss further process. 
 
@@ -60,24 +61,16 @@ DSP.jl package doesn't (yet) have a method to calculate the
 the frequency response of a FIR filter so we define it:
 
 ```julia
-freqtable(champs_df3, :"Id10186")
+freqtable(champs_df2, :"Id10186")
 ```
 
 ## Design Lowpass FIR filter
 
 
 Designing a lowpass FIR filter is very simple to do with DSP.jl, all you
-need to do is to define the window length, cut off frequency and the
-window. We will define a lowpass filter with cut off frequency at 5Hz for a signal
-sampled at 20 Hz.
-We will use the Hamming window, which is defined as:
-$w(n) = \alpha - \beta\cos\frac{2\pi n}{N-1}$, where $\alpha=0.54$ and $\beta=0.46$
 
 ```julia
-fs = 20
-f = digitalfilter(Lowpass(5, fs = fs), FIRWindow(hamming(61)))
-w = range(0, stop=pi, length=1024)
-h = FIRfreqz(f, w)
+freqtable(champs_df2, :"Id10193")
 ```
 
 ## Plot the frequency and impulse response
