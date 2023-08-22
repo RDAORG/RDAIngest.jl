@@ -19,6 +19,7 @@ If you're viewing the published version have a look at the
 
 <!-- NOT appeared this setup dependencies and datasetup -->
 ```julia
+using Pkg
 using CSV
 using DataFrames
 "FreqTables" ∉ keys(Pkg.project().dependencies) && Pkg.add("FreqTables")
