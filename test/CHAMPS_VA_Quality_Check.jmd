@@ -1,13 +1,14 @@
----
+<!--
 title : CHAMPS Verbal Autopsy Data Quality Check
 author : Young
 date: Aug 22nd 2023
----
+-->
 
 # CHAMPS Verbal Autopsy Data Quality Check
+### created by Yoonyoung Choi
+### Aug 22nd 2023
 
-
-Using the dataset "CHAMPS_ deid_verbal_autopsy", the data quality check to discuss further process. 
+Using the dataset *"CHAMPS_ deid_verbal_autopsy"*, the data quality check to discuss further process. 
 
 Notice that you don't need to define chunk options, but you can using
 `#+`. just before code e.g. `#+ term=True, caption='Fancy plots.'`.
@@ -17,10 +18,27 @@ If you're viewing the published version have a look at the
 
 <!-- this setup dependencies, but doesn't appear in the generated document -->
 ```julia; echo = false; results = "hidden"
-using Pkg
-using Statistics
-using FreqTables
+"FreqTables" ∉ keys(Pkg.project().dependencies) && Pkg.add("FreqTables")
 
+dotenv()
+
+db = opendatabase(ENV["RDA_DATABASE_PATH"], "RDA")
+data_query = """ 
+SELECT row_id, variable_id, value
+FROM data
+WHERE row_id IN (SELECT row_id FROM datarows WHERE dataset_id = 5)
+"""
+champs_data = DBInterface.execute(db, data_query)|>DataFrame 
+
+variables_query = """
+SELECT variable_id, name, value_type_id
+FROM variables
+WHERE variable_id IN (SELECT DISTINCT variable_id FROM data WHERE row_id IN (SELECT row_id FROM datarows WHERE dataset_id = 5))
+"""
+champs_vars = DBInterface.execute(db, variables_query)|> DataFrame
+
+champs_df1 = innerjoin(champs_data, champs_vars, on = :variable_id)
+champs_df2 = unstack(champs_df1, :row_id,  :name, :value)
 
 ```
 
@@ -43,7 +61,6 @@ the frequency response of a FIR filter so we define it:
 
 ```julia
 freqtable(champs_df3, :"Id10186")
-
 ```
 
 ## Design Lowpass FIR filter
