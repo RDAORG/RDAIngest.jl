@@ -666,13 +666,30 @@ date: Aug 22nd 2023
  -->
 
 <h2>CHAMPS Verbal Autopsy Data Quality Check</h2>
-<h6>Yoonyoung Choi</h6>
-<h6>Aug 22nd 2023</h6>
+<h5>Yoonyoung Choi</h5>
+<h5>Aug 22nd 2023</h5>
 <p>Using the dataset <em>&quot;CHAMPS_ deid<em>verbal</em>autopsy&quot;</em>, the data quality check to discuss further process. </p>
 <p>Notice that you don&#39;t need to define chunk options, but you can using <code>#&#43;</code>. just before code e.g. <code>#&#43; term&#61;True, caption&#61;&#39;Fancy plots.&#39;</code>. If you&#39;re viewing the published version have a look at the <a href="FIR_delibGR.sosign_plots.jl">source</a> to see the markup.</p>
 
 <!--  NOT appeared this setup dependencies and datasetup  -->
 
+
+
+<pre class='hljl'>
+<span class='hljl-k'>using</span><span class='hljl-t'> </span><span class='hljl-n'>CSV</span><span class='hljl-t'>
+</span><span class='hljl-k'>using</span><span class='hljl-t'> </span><span class='hljl-n'>DataFrames</span><span class='hljl-t'>
+</span><span class='hljl-s'>&quot;FreqTables&quot;</span><span class='hljl-t'> </span><span class='hljl-oB'>∉</span><span class='hljl-t'> </span><span class='hljl-nf'>keys</span><span class='hljl-p'>(</span><span class='hljl-n'>Pkg</span><span class='hljl-oB'>.</span><span class='hljl-nf'>project</span><span class='hljl-p'>()</span><span class='hljl-oB'>.</span><span class='hljl-n'>dependencies</span><span class='hljl-p'>)</span><span class='hljl-t'> </span><span class='hljl-oB'>&amp;&amp;</span><span class='hljl-t'> </span><span class='hljl-n'>Pkg</span><span class='hljl-oB'>.</span><span class='hljl-nf'>add</span><span class='hljl-p'>(</span><span class='hljl-s'>&quot;FreqTables&quot;</span><span class='hljl-p'>)</span><span class='hljl-t'>
+</span><span class='hljl-k'>using</span><span class='hljl-t'> </span><span class='hljl-n'>FreqTables</span><span class='hljl-t'>
+</span><span class='hljl-n'>filename</span><span class='hljl-t'> </span><span class='hljl-oB'>=</span><span class='hljl-t'> </span><span class='hljl-s'>&quot;champs_df2&quot;</span><span class='hljl-t'>
+</span><span class='hljl-n'>path</span><span class='hljl-t'> </span><span class='hljl-oB'>=</span><span class='hljl-t'> </span><span class='hljl-s'>&quot;/Users/young/Documents/GitHub/RDAIngest.jl/&quot;</span><span class='hljl-t'>
+</span><span class='hljl-n'>file</span><span class='hljl-t'> </span><span class='hljl-oB'>=</span><span class='hljl-t'> </span><span class='hljl-nf'>joinpath</span><span class='hljl-p'>(</span><span class='hljl-n'>path</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-s'>&quot;</span><span class='hljl-si'>$filename</span><span class='hljl-s'>.csv&quot;</span><span class='hljl-p'>)</span><span class='hljl-t'>
+</span><span class='hljl-n'>champs_raw</span><span class='hljl-t'> </span><span class='hljl-oB'>=</span><span class='hljl-t'> </span><span class='hljl-n'>CSV</span><span class='hljl-oB'>.</span><span class='hljl-nf'>File</span><span class='hljl-p'>(</span><span class='hljl-n'>file</span><span class='hljl-p'>;</span><span class='hljl-t'> </span><span class='hljl-n'>delim</span><span class='hljl-oB'>=</span><span class='hljl-sc'>&#39;,&#39;</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-n'>quotechar</span><span class='hljl-oB'>=</span><span class='hljl-sc'>&#39;&quot;&#39;</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-n'>dateformat</span><span class='hljl-oB'>=</span><span class='hljl-s'>&quot;yyyy-mm-dd&quot;</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-n'>decimal</span><span class='hljl-oB'>=</span><span class='hljl-sc'>&#39;.&#39;</span><span class='hljl-p'>)</span><span class='hljl-t'> </span><span class='hljl-oB'>|&gt;</span><span class='hljl-t'> </span><span class='hljl-n'>DataFrame</span>
+</pre>
+
+
+<pre class="julia-error">
+ERROR: UndefVarError: Pkg not defined
+</pre>
 
 
 <h1>FIR Filter Design</h1>
