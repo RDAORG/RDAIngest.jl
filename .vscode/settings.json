@@ -1,3 +1,7 @@
 {
     "sqltools.useNodeRuntime": true
 }
+
+{
+    "workbench.editorLargeFileConfirmation": 2048
+}
