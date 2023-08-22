@@ -4,9 +4,9 @@ author : Young
 date: Aug 22nd 2023
 -->
 
-# CHAMPS Verbal Autopsy Data Quality Check
-created by Yoonyoung Choi
-Aug 22nd 2023
+## CHAMPS Verbal Autopsy Data Quality Check
+##### created by Yoonyoung Choi
+##### Aug 22nd 2023
 
 
 Using the dataset *"CHAMPS_ deid_verbal_autopsy"*, the data quality check to discuss further process. 
@@ -17,30 +17,15 @@ If you're viewing the published version have a look at the
 [source](FIR_delibGR.sosign_plots.jl) to see the markup.
 
 
-<!-- this setup dependencies, but doesn't appear in the generated document -->
+<!-- NOT appeared this setup dependencies and datasetup -->
 ```julia; echo = false; results = "hidden"
+"CSV" ∉ keys(Pkg.project().dependencies) && Pkg.add("CSV")
+"DataFrames" ∉ keys(Pkg.project().dependencies) && Pkg.add("DataFrames")
 "FreqTables" ∉ keys(Pkg.project().dependencies) && Pkg.add("FreqTables")
-
-dotenv()
-
-db = opendatabase(ENV["RDA_DATABASE_PATH"], "RDA")
-data_query = """ 
-SELECT row_id, variable_id, value
-FROM data
-WHERE row_id IN (SELECT row_id FROM datarows WHERE dataset_id = 5)
-"""
-champs_data = DBInterface.execute(db, data_query)|>DataFrame 
-
-variables_query = """
-SELECT variable_id, name, value_type_id
-FROM variables
-WHERE variable_id IN (SELECT DISTINCT variable_id FROM data WHERE row_id IN (SELECT row_id FROM datarows WHERE dataset_id = 5))
-"""
-champs_vars = DBInterface.execute(db, variables_query)|> DataFrame
-
-champs_df1 = innerjoin(champs_data, champs_vars, on = :variable_id)
-champs_df2 = unstack(champs_df1, :row_id,  :name, :value)
-
+filename = "champs_df2"
+path = "/Users/young/Documents/GitHub/RDAIngest.jl/"
+file = joinpath(path, "$filename.csv")
+champs_raw = CSV.File(file; delim=',', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
 ```
 
 
@@ -61,7 +46,7 @@ DSP.jl package doesn't (yet) have a method to calculate the
 the frequency response of a FIR filter so we define it:
 
 ```julia
-freqtable(champs_df2, :"Id10186")
+freqtable(champs_raw, :"Id10186")
 ```
 
 ## Design Lowpass FIR filter
@@ -70,7 +55,7 @@ freqtable(champs_df2, :"Id10186")
 Designing a lowpass FIR filter is very simple to do with DSP.jl, all you
 
 ```julia
-freqtable(champs_df2, :"Id10193")
+freqtable(champs_raw, :"Id10193")
 ```
 
 ## Plot the frequency and impulse response

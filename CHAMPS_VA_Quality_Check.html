@@ -666,8 +666,7 @@ date: Aug 22nd 2023
  -->
 
 <h1>CHAMPS Verbal Autopsy Data Quality Check</h1>
-<h3>created by Yoonyoung Choi</h3>
-<h3>Aug 22nd 2023</h3>
+<p>created by Yoonyoung Choi Aug 22nd 2023</p>
 <p>Using the dataset <em>&quot;CHAMPS_ deid<em>verbal</em>autopsy&quot;</em>, the data quality check to discuss further process. </p>
 <p>Notice that you don&#39;t need to define chunk options, but you can using <code>#&#43;</code>. just before code e.g. <code>#&#43; term&#61;True, caption&#61;&#39;Fancy plots.&#39;</code>. If you&#39;re viewing the published version have a look at the <a href="FIR_delibGR.sosign_plots.jl">source</a> to see the markup.</p>
 
@@ -682,7 +681,7 @@ date: Aug 22nd 2023
 
 
 <pre class='hljl'>
-<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_df3</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10186&quot;</span><span class='hljl-p'>)</span>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_df2</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10186&quot;</span><span class='hljl-p'>)</span>
 </pre>
 
 
@@ -692,19 +691,16 @@ ERROR: UndefVarError: freqtable not defined
 
 
 <h2>Design Lowpass FIR filter</h2>
-<p>Designing a lowpass FIR filter is very simple to do with DSP.jl, all you need to do is to define the window length, cut off frequency and the window. We will define a lowpass filter with cut off frequency at 5Hz for a signal sampled at 20 Hz. We will use the Hamming window, which is defined as: <span class="math">$w(n) = \alpha - \beta\cos\frac{2\pi n}{N-1}$</span>, where <span class="math">$\alpha=0.54$</span> and <span class="math">$\beta=0.46$</span></p>
+<p>Designing a lowpass FIR filter is very simple to do with DSP.jl, all you</p>
 
 
 <pre class='hljl'>
-<span class='hljl-n'>fs</span><span class='hljl-t'> </span><span class='hljl-oB'>=</span><span class='hljl-t'> </span><span class='hljl-ni'>20</span><span class='hljl-t'>
-</span><span class='hljl-n'>f</span><span class='hljl-t'> </span><span class='hljl-oB'>=</span><span class='hljl-t'> </span><span class='hljl-nf'>digitalfilter</span><span class='hljl-p'>(</span><span class='hljl-nf'>Lowpass</span><span class='hljl-p'>(</span><span class='hljl-ni'>5</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-n'>fs</span><span class='hljl-t'> </span><span class='hljl-oB'>=</span><span class='hljl-t'> </span><span class='hljl-n'>fs</span><span class='hljl-p'>),</span><span class='hljl-t'> </span><span class='hljl-nf'>FIRWindow</span><span class='hljl-p'>(</span><span class='hljl-nf'>hamming</span><span class='hljl-p'>(</span><span class='hljl-ni'>61</span><span class='hljl-p'>)))</span><span class='hljl-t'>
-</span><span class='hljl-n'>w</span><span class='hljl-t'> </span><span class='hljl-oB'>=</span><span class='hljl-t'> </span><span class='hljl-nf'>range</span><span class='hljl-p'>(</span><span class='hljl-ni'>0</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-n'>stop</span><span class='hljl-oB'>=</span><span class='hljl-n'>pi</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-n'>length</span><span class='hljl-oB'>=</span><span class='hljl-ni'>1024</span><span class='hljl-p'>)</span><span class='hljl-t'>
-</span><span class='hljl-n'>h</span><span class='hljl-t'> </span><span class='hljl-oB'>=</span><span class='hljl-t'> </span><span class='hljl-nf'>FIRfreqz</span><span class='hljl-p'>(</span><span class='hljl-n'>f</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-n'>w</span><span class='hljl-p'>)</span>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_df2</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10193&quot;</span><span class='hljl-p'>)</span>
 </pre>
 
 
 <pre class="julia-error">
-ERROR: UndefVarError: Lowpass not defined
+ERROR: UndefVarError: freqtable not defined
 </pre>
 
 
