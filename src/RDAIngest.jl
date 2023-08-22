@@ -12,7 +12,9 @@ using DataStructures
 #using OrderedCollections
 using XLSX
 
-export AbstractSource, CHAMPSSource, COMSASource, AbstractDictionary, Ingest,
+export 
+    Vocabulary, VocabularyItem,
+    AbstractSource, CHAMPSSource, COMSASource, AbstractDictionary, Ingest,
     ingest_source, ingest_dictionary, ingest_deaths, ingest_data,
 
     add_source, get_source, get_namedkey, get_variable, 
@@ -667,20 +669,22 @@ function add_variables(variables::AbstractDataFrame, db::SQLite.DB, domain_id::I
         error("Variables dataframe missing columns: ", join(missing_columns, ", "))
     end
 
-    # Variable insert SQL
-    sql = raw"""
-    INSERT INTO variables (domain_id, name, value_type_id, vocabulary_id, description, note)
-    VALUES (@domain_id, @name, @value_type_id, @vocabulary_id, @description, @note)
-    ON CONFLICT DO UPDATE
-    SET vocabulary_id = excluded.vocabulary_id,
-        description = excluded.description,
-        note = excluded.note 
-    WHERE variables.vocabulary_id IS NULL OR variables.description IS NULL OR variables.note IS NULL;
-    """
-    stmt = DBInterface.prepare(db, sql)
+        # Variable insert SQL
+        sql = raw"""
+        INSERT INTO variables (domain_id, name, value_type_id, vocabulary_id, description, note)
+        VALUES (@domain_id, @name, @value_type_id, @vocabulary_id, @description, @note)
+        ON CONFLICT DO UPDATE
+        SET vocabulary_id = excluded.vocabulary_id,
+            description = excluded.description,
+            note = excluded.note 
+        WHERE variables.vocabulary_id IS NULL OR variables.description IS NULL OR variables.note IS NULL;
+        """
+        stmt = DBInterface.prepare(db, sql)
 
-    # Add variables
-    insertcols!(variables, 1, :domain_id => domain_id)
+        # Add variables
+        if !("domain_id" in names(variables))
+            insertcols!(variables, 1, :domain_id => domain_id)
+        end
 
         for row in eachrow(variables)
             id = missing
@@ -691,7 +695,6 @@ function add_variables(variables::AbstractDataFrame, db::SQLite.DB, domain_id::I
                                         value_type_id=row.DataType, vocabulary_id=id, 
                                         description=row.Description, note=row.Note))
         end
-
     return nothing
 end
 
