@@ -9,16 +9,12 @@ date: Aug 22nd 2023
 ##### Aug 22nd 2023
 
 
-Using the dataset *"CHAMPS_ deid_verbal_autopsy"*, the data quality check to discuss further process. 
-
-Notice that you don't need to define chunk options, but you can using
-`#+`. just before code e.g. `#+ term=True, caption='Fancy plots.'`.
-If you're viewing the published version have a look at the
-[source](FIR_delibGR.sosign_plots.jl) to see the markup.
+Using the dataset *"CHAMPS_deid_verbal_autopsy_results"*, the data quality check to discuss further process. 
 
 
 <!-- NOT appeared this setup dependencies and datasetup -->
-```julia
+ ## Set up the dataset
+ ```julia; echo=false
 using Pkg
 using CSV
 using DataFrames
@@ -28,7 +24,6 @@ filename = "champs_df2"
 path = "/Users/young/Documents/GitHub/RDAIngest.jl/"
 file = joinpath(path, "$filename.csv")
 champs_raw = CSV.File(file; delim=',', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
-
 ```
 
 
