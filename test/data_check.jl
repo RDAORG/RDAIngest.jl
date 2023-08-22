@@ -22,7 +22,7 @@ db = opendatabase(ENV["RDA_DATABASE_PATH"], "RDA")
 # Example codes to get the dataset to dataframe
 DBInterface.execute(db, "SELECT * FROM value_types";) |> DataFrame
 
-# Set up the [CHAMPS verbal autopsy dataset]
+# Set up the [CHAMPS verbal autopsy] as dataframe
 
 # Query data for rows with dataset_id = 2
 data_query = """
@@ -63,7 +63,7 @@ Surely need to clean values: ["Id10106", "Id10108", "Id10161_0","Id10161_1","Id1
 
 # CLEAN THE DATA 
 
-# STEP 1. Every string variable should be in the lowercase.
+## STEP 1: Every string variable should be in the lowercase.
 
 # Create a copy of the original DataFrame
 champs_df3 = copy(champs_df2)
@@ -86,22 +86,33 @@ end
 # Save the DataFrame to a CSV file to check the dataframe
 CSV.write("champs_df3.csv", champs_df3)
 
-# STEP 2. Make the "DK" mising data consistent
-# Check the unique values of each variable and get the frequency
-unique(champs_df3[!, "Id10186"])
+## STEP 2: Make the "DK" mising data consistent
+using Statistics
+using Pkg
+#Pkg.add("FreqTables")
+using FreqTables
 
-# Define a function to replace "does not know" and "doesn't know" with "dk"
-replace_dk(text) = lowercase(text) == "does not know" || lowercase(text) == "doesn't know" ? "dk" : text
+# Check the frequency of each variable
+freqtable(champs_df3, :"Id10186")
 
-# Loop through each data column
-for col_name in names(your_df)
-    col = your_df[!, col_name]
-    if eltype(col) <: String
-        your_df[!, col_name] .= replace_dk.(col)
+# Define a function to replace "doesn't know" and "does not know" with "dk"
+replace_dk(text) = ismissing(text) ? missing : (text == "doesn't know" || text == "does not know" ? "dk" : text)
+
+# Apply the replace_dk function to the entire DataFrame
+for col_name in names(champs_df3)
+    col = champs_df3[!, col_name]
+    if eltype(col) <: Union{Missing, String}
+        champs_df3[!, col_name] .= replace_dk.(col)
     end
 end
 
+# Check again for sanity
+freqtable(champs_df3, :"Id10186")
 
+# Save the DataFrame to a CSV file to check the dataframe
+CSV.write("champs_df3.csv", champs_df3)
+
+## STEP 3: make 
 
 
 
