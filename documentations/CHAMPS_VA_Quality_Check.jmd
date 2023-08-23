@@ -23,6 +23,8 @@ using Dates
 "StatsBase" ∉ keys(Pkg.project().dependencies) && Pkg.add("StatsBase")
 using FreqTables
 using StatsBase
+```
+```julia; echo=false
 filename = "champs_df2"
 path = "/Users/young/Documents/GitHub/RDAIngest.jl/"
 file = joinpath(path, "$filename.csv")
@@ -31,13 +33,13 @@ champs_raw = CSV.File(file; delim=',', quotechar='"', dateformat="yyyy-mm-dd", d
 
 ### 1. Describe the dataset 
 
-1) Data Size
+- Data Size
 ```julia 
 size(champs_raw)
 ```
 
-2) Data types 
-```julia
+- Data types 
+```julia ; echo=false
 column_types = Dict{Symbol, Type}()
 for col in names(champs_raw)
     column_types[Symbol(col)] = eltype(champs_raw[!, col])
@@ -59,7 +61,7 @@ end
 #### 1) Missing Variables 
 There are 89 variables of consisting only missing values. We need to discuss whether these variables are supposed to be looked like this. 
 The list of variables only of missing value is here:
-```julia
+```julia ; echo=false
 println("Variables with type Missing:")
 for col_name in names(champs_raw)
     if eltype(champs_raw[!, col_name]) == Missing
@@ -73,12 +75,12 @@ end
 
 Most variables are categorical which is typed in String. 
 
-Example 1. At any time during the final illness was there blood in the stools?
+**Example 1**. At any time during the final illness was there blood in the stools?
 ```julia
 freqtable(champs_raw, :"Id10186")
 ```
 
-Example 2. What is your/the respondent's relationship to the deceased?
+**Example 2**. What is your/the respondent's relationship to the deceased?
 ```julia
 freqtable(champs_raw, :"Id10008")
 ```
@@ -86,18 +88,22 @@ Most of them have inconsistent value types for each categories (mixed upper/lowe
 These are actually very easy to fix to make all lowercase and make all doesn'know does not know answers to dk. 
 
 ##### 3) Numerical Variables (Integer/Float)
-*Calculating issues and data quality check for **Ages***
+*Calculating issues and data quality check for Ages*
 
 Calculated ages have so many missing values. 
+**ageInDays**
 ```julia
 describe(champs_raw[!, :ageInDays])
 ```
+**ageInYears**
 ```julia
 describe(champs_raw[!, :ageInYears])
 ```
+**ageInYears2**
 ```julia
 describe(champs_raw[!, :ageInYears2])
 ```
+**ageInYearsRemain**
 ```julia
 describe(champs_raw[!, :ageInYearsRemain])
 ```
@@ -106,8 +112,8 @@ ageInYearsRemain especially does not make sense at all.
 #### 4) Date Variables
 *Validity issues with all the date variables* 
 
-List of date variables
-```julia
+- List of date variables
+```julia; echo=false
 date_union_vars = []
 date_vars = []
 for col_name in names(champs_raw)
@@ -125,7 +131,7 @@ for var in append!(date_union_vars, date_vars)
 end
 ```
 
-- Id10012: Date of interview
+**Id10012: Date of interview**
 ```julia ; echo=false
 # Extract the "Id10012" date column
 id10012_dates = champs_raw[!, :Id10012]
@@ -148,7 +154,7 @@ These dates do not make sense.
 
 - Source data for Age Calculation //Calculated: (${Id10023} - ${Id10021})
 
-- 1. Id10021: When was the deceased born?
+- **Id10021**: When was the deceased born?
 ```julia ; echo=false
 # Extract the "Id10021" date column
 id10021_dates = champs_raw[!, :Id10021]
@@ -168,7 +174,7 @@ else
 end
 ```
 
-- 2. Id10023: When did (s)he die?
+- **Id10023**: When did (s)he die?
 ```julia ; echo=false
 # Extract the "Id10023" date column
 id10023_dates = champs_raw[!, :Id10023]
