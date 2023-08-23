@@ -64,7 +64,7 @@ Surely need to clean values: ["Id10106", "Id10108", "Id10161_0","Id10161_1","Id1
                ] 
 """
 #######################################
-### STEP 2. Documentation of data quality of raw data in Markdown 
+### STEP 1. Documentation of data quality of raw data in Markdown 
 ###(CHAMPS_VA_Quality_Check.jmd)
 #######################################
 
@@ -107,7 +107,9 @@ end
 
 ## 2. Looking closely into each variable type
 
-### 
+### 1) Missing Variables 
+#### There are 89 variables of consisting only missing values. We need to discuss whether these variables are supposed to be looked like this. 
+#### The list of variables only of missing value is here 
 println("Variables with type Missing:")
 for col_name in names(champs_raw)
     if eltype(champs_raw[!, col_name]) == Missing
@@ -115,19 +117,154 @@ for col_name in names(champs_raw)
     end
 end
 
-### 1) Categorical Variables (String)
+### 2) Categorical Variables (String)
+### Inconsistencies thoughout the categorical variables
 ##### Most variables are categorical which is typed in String. 
 
-#### example Q. At any time during the final illness was there blood in the stools?
+#### eg 1. At any time during the final illness was there blood in the stools?
 freqtable(champs_raw, :"Id10186")
 
-freqtable(champs_raw, :"Id10193")
+#### eg 2. What is your/the respondent's relationship to the deceased?
+freqtable(champs_raw, :"Id10008")
+
+##### Most of them have inconsistent value types for each categories (mixed upper/lower case) DK answers
+##### These are actually very easy to fix to make all lowercase and make all doesn'know does not know answers to dk. 
+
+### 3) Numerical Variables (Integer/Float)
+### Calculating issues and data quality check for Ages 
+
+##### Calculated ages have so many missing values. 
+describe(champs_raw[!, :ageInDays])
+
+describe(champs_raw[!, :ageInYears])
+describe(champs_raw[!, :ageInYears2])
+describe(champs_raw[!, :ageInYearsRemain])
+
+##### ageInYearsRemain especially does not make sense at all. 
+
+
+### 4) Date Variables
+### Validity issues with all the date variables 
+date_union_vars = []
+date_vars = []
+for col_name in names(champs_raw)
+    col_type = eltype(champs_raw[!, col_name])
+    if col_type == Union{Missing, Date}
+        push!(date_union_vars, col_name)
+    elseif col_type == Date
+        push!(date_vars, col_name)
+    end
+end
+
+println("Variables of dates:")
+for var in append!(date_union_vars, date_vars)
+    println(var)
+end
+
+### Id10012: Date of interview
+# Extract the "Id10012" date column
+id10012_dates = champs_raw[!, :Id10012]
+# Count missing values
+id12_missing = count(ismissing, id10012_dates)
+# Remove missing values
+id12_dates = filter(x -> !ismissing(x), id10012_dates)
+
+# Calculate the minimum and maximum valid dates
+if !isempty(id12_dates)
+    min_date = minimum(id12_dates)
+    max_date = maximum(id12_dates)
+    println("Range of valid dates for Id10012: $min_date to $max_date")
+    println("Number of missing values: $id12_missing")
+else
+    println("No valid dates found.")
+end
+
+##### Does not make sense 
+
+### Source data for Age Calculation //Calculated: (${Id10023} - ${Id10021})
+## Id10021: When was the deceased born?
+# Extract the "Id10021" date column
+id10021_dates = champs_raw[!, :Id10021]
+# Count missing values
+id21_missing = count(ismissing, id10021_dates)
+# Remove missing values
+id21_dates = filter(x -> !ismissing(x), id10021_dates)
+
+# Calculate the minimum and maximum valid dates
+if !isempty(id21_dates)
+    min_date = minimum(id21_dates)
+    max_date = maximum(id21_dates)
+    println("Range of valid dates for Id10021: $min_date to $max_date")
+    println("Number of missing values: $id21_missing")
+else
+    println("No valid dates found.")
+end
+
+## Id10023: When did (s)he die?
+# Extract the "Id10023" date column
+id10023_dates = champs_raw[!, :Id10023]
+# Count missing values
+id23_missing = count(ismissing, id10023_dates)
+# Remove missing values
+id23_dates = filter(x -> !ismissing(x), id10023_dates)
+
+# Calculate the minimum and maximum valid dates
+if !isempty(id23_dates)
+    min_date = minimum(id23_dates)
+    max_date = maximum(id23_dates)
+    println("Range of valid dates for Id10023: $min_date to $max_date")
+    println("Number of missing values: $id23_missing")
+else
+    println("No valid dates found.")
+end
+
+##### Gotta make sure if it is the valid values
+
+### 5) Time variable - format issues 
+eltype(champs_raw[!, :Id10011])
+champs_raw[!, :Id10011]
+# Extract the "Id10011" column
+id10011_column = champs_raw[!, :Id10011]
+
+# Count the number of missing values
+id11_missing = count(ismissing, id10011_column)
+
+# Print the number of missing values
+println("Number of missing values for Id10011: $id11_missing")
+
+# Print the list of non-missing values
+println("List of non-missing values for Id10011:")
+non_missing_values = id10011_column[.!ismissing.(id10011_column)]
+println(non_missing_values)
 
 
 
+
+# Get indices for head, middle, and last 10 rows
+n = size(champs_raw, 1)
+head_indices = 1:10
+middle_indices = max(1, n ÷ 2 - 5):min(n, n ÷ 2 + 4)
+last_indices = n-9:n
+
+# Define a function to get non-missing values
+function get_non_missing_values(indices, column)
+    non_missing_values = [value for (i, value) in enumerate(column) if i in indices && !ismissing(value)]
+    return non_missing_values
+end
+
+# Get non-missing values for head, middle, and last 10 rows
+head_values = get_non_missing_values(head_indices, id10011_column)
+middle_values = get_non_missing_values(middle_indices, id10011_column)
+last_values = get_non_missing_values(last_indices, id10011_column)
+
+# Print non-missing values for head, middle, and last 10 rows
+println("Non-missing values for Id10011:")
+println("Head 10 rows: ", head_values)
+println("Middle 10 rows: ", middle_values)
+println("Last 10 rows: ", last_values)
 
 #############################################
-### STEP 3. CLEAN THE DATA (not processed yet)
+### STEP 2. CLEAN THE DATA (not processed yet)
 #############################################
 
 # 1. Every string variable should be in the lowercase.
