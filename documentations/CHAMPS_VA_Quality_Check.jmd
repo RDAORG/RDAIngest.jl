@@ -4,16 +4,14 @@ author : Young
 date: Aug 22nd 2023
 -->
 
-# CHAMPS Verbal Autopsy Data Quality Report
-##### Yoonyoung Choi, Sociology, The Ohio State University
+# CHAMPS Verbal Autopsy Data Quality Assessment Report
+##### Yoonyoung Choi, The Ohio State University
 ##### Aug 23 2023
 
-
-Using the dataset *"CHAMPS_ deid_ verbal_ autopsy_ results"*, the data quality check to discuss further process. 
-
+This report presents a data quality assessment of the dataset "CHAMPS Deidentified Verbal Autopsy Results." The objective is to identify and discuss data quality issues that may impact further data processing and analysis.
 
 <!-- NOT appeared this setup dependencies and datasetup -->
- ### 0. Set up the dataset
+ ### Set up the dataset
 ```julia; echo=false; results="hidden"
 using CSV
 using DataFrames
@@ -31,14 +29,14 @@ file = joinpath(path, "$filename.csv")
 champs_raw = CSV.File(file; delim=',', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
 ```
 
-### 1. Describe the dataset 
+### Dataset overview
 
-- Data Size
+#### Data Size
 ```julia 
 size(champs_raw)
 ```
 
-- Data types 
+#### Data types 
 ```julia ; echo=false
 column_types = Dict{Symbol, Type}()
 for col in names(champs_raw)
@@ -56,11 +54,10 @@ for (col_type, count) in type_counts
 end
 ```
 
-### 2. Looking closely into each variable type
+### Exploring Variable Types
 
 #### 1) Missing Variables 
-There are 89 variables of consisting only missing values. We need to discuss whether these variables are supposed to be looked like this. 
-The list of variables only of missing value is here:
+There are 89 variables that consist solely of missing values. Further investigation is needed to determine if these variables are as expected. The list of variables with only missing values is as follows:
 ```julia ; echo=false
 println("Variables with type Missing:")
 for col_name in names(champs_raw)
@@ -73,37 +70,40 @@ end
 ##### 2) Categorical Variables (String)
 *Inconsistencies thoughout the categorical variables*
 
-Most variables are categorical which is typed in String. 
+Categorical variables are primarily represented as strings. Some inconsistencies exist in the value types for each category, including mixed upper/lower case and "don't know" answers. 
+Examples include:
 
-**Example 1**. At any time during the final illness was there blood in the stools?
-```julia
+
+- **Example 1.Id10186**. At any time during the final illness was there blood in the stools?
+```julia; echo=false
 freqtable(champs_raw, :"Id10186")
 ```
 
-**Example 2**. What is your/the respondent's relationship to the deceased?
-```julia
-freqtable(champs_raw, :"Id10008")
+- **Example 2.Id1008**. What is your/the respondent's relationship to the deceased?
+```julia; echo=false
+freqfamily=freqtable(champs_raw, :"Id10008")
+println(freqfamily)
 ```
-Most of them have inconsistent value types for each categories (mixed upper/lower case) DK answers
+
 These are actually very easy to fix to make all lowercase and make all doesn'know does not know answers to dk. 
 
 ##### 3) Numerical Variables (Integer/Float)
 *Calculating issues and data quality check for Ages*
-
-Calculated ages have so many missing values. 
-**ageInDays**
+Numerical variables, such as calculated ages, have a significant number of missing values. 
+Examples include:
+- **ageInDays**
 ```julia
 describe(champs_raw[!, :ageInDays])
 ```
-**ageInYears**
+- **ageInYears**
 ```julia
 describe(champs_raw[!, :ageInYears])
 ```
-**ageInYears2**
+- **ageInYears2**
 ```julia
 describe(champs_raw[!, :ageInYears2])
 ```
-**ageInYearsRemain**
+- **ageInYearsRemain**
 ```julia
 describe(champs_raw[!, :ageInYearsRemain])
 ```
@@ -131,7 +131,7 @@ for var in append!(date_union_vars, date_vars)
 end
 ```
 
-**Id10012: Date of interview**
+- **Id10012: Date of interview**
 ```julia ; echo=false
 # Extract the "Id10012" date column
 id10012_dates = champs_raw[!, :Id10012]
@@ -150,11 +150,10 @@ else
     println("No valid dates found.")
 end
 ```
-These dates do not make sense.
 
-- Source data for Age Calculation //Calculated: (${Id10023} - ${Id10021})
+##### Source data for Age Calculation //Calculated: (${Id10023} - ${Id10021})
 
-- **Id10021**: When was the deceased born?
+- **Id10021: Date of Birth**
 ```julia ; echo=false
 # Extract the "Id10021" date column
 id10021_dates = champs_raw[!, :Id10021]
@@ -174,7 +173,7 @@ else
 end
 ```
 
-- **Id10023**: When did (s)he die?
+- **Id10023: Date of Death**
 ```julia ; echo=false
 # Extract the "Id10023" date column
 id10023_dates = champs_raw[!, :Id10023]
@@ -194,11 +193,13 @@ else
 end
 ```
 
-Gotta make sure if it is the valid values. Range of Early 1900 and after 2021 do not make sense.
+Date variables exhibit validity issues that warrant further investigation. Range of Early 1900 and after 2021 do not make sense.
 
 #### 5) Time variables 
 *Inconsistent format issues* 
 
+Time variables demonstrate inconsistencies in format. The variable "Id10011" presents challenges with its format and content. 
+Examples from "Id10011" for different lengths are as follows:
 ```julia ; echo=false
 # Extract the "Id10011" column
 id10011_column = champs_raw[!, :Id10011]
@@ -224,4 +225,6 @@ for (length, example) in examples_by_length
     println("Length $length: $example")
 end
 ```
-Totally does not make sense or how to clean it. 
+### Conclusion
+This data quality report provides a comprehensive overview of the dataset's characteristics and potential issues. 
+It serves as a foundation for further data cleaning and analysis. Addressing these data quality concerns will be crucial to ensuring accurate and reliable results.
