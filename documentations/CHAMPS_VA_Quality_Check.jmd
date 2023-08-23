@@ -12,7 +12,7 @@ date: Aug 23 2023
 \
 \
 
-This report presents a data quality assessment of the dataset "CHAMPS Deidentified Verbal Autopsy Results." The objective is to identify and discuss data quality issues that may impact further data processing and analysis.
+This report presents a data quality assessment of the dataset "CHAMPS Deidentified Verbal Autopsy Results." The objective is to identify and discuss data quality issues that may impact further data processing and analysis. This document is created using *Julia markdown* and is based on the **RDA database**[ver.Aug 2023].
 
 \
 
@@ -255,5 +255,5 @@ end
 \
 
 ### Conclusion
-This data quality report provides a comprehensive overview of the dataset's characteristics and potential issues. 
+This data quality report provides a comprehensive overview of the CHAMPS VA dataset's characteristics and potential issues. 
 It serves as a foundation for further data cleaning and analysis. Addressing these data quality concerns will be crucial to ensuring accurate and reliable results.
