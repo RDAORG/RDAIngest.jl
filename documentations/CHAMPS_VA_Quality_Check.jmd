@@ -5,10 +5,11 @@ date: Aug 23 2023
 -->
 
 # **CHAMPS Verbal Autopsy Data Quality Assessment Report**
-###### **Yoonyoung Choi***
-###### ***Institute of Population Research, The Ohio State University**
+###### **Yoonyoung Choi^a**
+###### **^a Institute of Population Research, The Ohio State University**
 ###### Aug 23 2023
 
+\
 \
 \
 
@@ -89,12 +90,12 @@ Categorical variables are primarily represented as strings. Some inconsistencies
 Examples include:
 
 
-- **Example1. Id10186**: At any time during the final illness was there blood in the stools?
+- **Id10186**: At any time during the final illness was there blood in the stools?
 ```julia; echo=false
 freqtable(champs_raw, :"Id10186")
 ```
 
-- **Example2. Id10052**: What was her/his citizenship/nationality?
+- **Id10052**: What was her/his citizenship/nationality?
 ```julia; echo=false
 freqtable(champs_raw, :"Id10052")
 ```
@@ -133,7 +134,7 @@ The range of *ageInYearsRemain* variable lacks logical coherence and warrants fu
 
 \
 
-- List of date variables
+List of date variables
 ```julia; echo=false
 date_union_vars = []
 date_vars = []
