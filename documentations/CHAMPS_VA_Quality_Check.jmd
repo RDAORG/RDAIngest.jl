@@ -5,13 +5,15 @@ date: Aug 23 2023
 -->
 
 # **CHAMPS Verbal Autopsy Data Quality Assessment Report**
-###### **Yoonyoung Choi**
-###### **Institute of Population Research, The Ohio State University**
+###### **Yoonyoung Choi***
+###### ***Institute of Population Research, The Ohio State University**
 ###### Aug 23 2023
+
+\
+\
 
 This report presents a data quality assessment of the dataset "CHAMPS Deidentified Verbal Autopsy Results." The objective is to identify and discuss data quality issues that may impact further data processing and analysis.
 
-\
 \
 
 <!-- NOT appeared this setup dependencies and datasetup -->
@@ -118,7 +120,7 @@ describe(champs_raw[!, :ageInYears])
 ```julia
 describe(champs_raw[!, :ageInYears2])
 ```
-- **ageInYearsRemain**:Calculated: ${ageInDays} mod 365.25
+- **ageInYearsRemain**: Calculated: ${ageInDays} mod 365.25
 ```julia
 describe(champs_raw[!, :ageInYearsRemain])
 ```
@@ -128,6 +130,8 @@ The range of *ageInYearsRemain* variable lacks logical coherence and warrants fu
 
 #### 4) Date Variables
 - *Validity issues with all the date variables* 
+
+\
 
 - List of date variables
 ```julia; echo=false
@@ -147,7 +151,7 @@ for var in append!(date_union_vars, date_vars)
     println(var)
 end
 ```
-
+Examples include:
 - **Id10012: Date of interview**
 ```julia ; echo=false
 # Extract the "Id10012" date column
@@ -168,7 +172,7 @@ else
 end
 ```
 
-##### Source data for Age Calculation 
+**Source data for Age Calculation**
 Calculated: (${Id10023} - ${Id10021})
 
 - **Id10021: Date of Birth**
@@ -213,7 +217,7 @@ end
 
 Date variables exhibit validity issues that warrant further investigation. 
 
-The presence of dates before the early 1900s and beyond 2021 in the dataset seems unusual and requires closer scrutiny.
+The presence of dates before the early 1900s and beyond 2022 in the dataset seems unusual and requires closer scrutiny.
 
 \
 
