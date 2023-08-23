@@ -1,7 +1,7 @@
 <!--
-title : CHAMPS Verbal Autopsy Data Quality Check
+title : CHAMPS Verbal Autopsy Data Quality Check [Part 1]
 author : Young
-date: Aug 22nd 2023
+date: Aug 23 2023
 -->
 
 # **CHAMPS Verbal Autopsy Data Quality Assessment Report**
@@ -9,6 +9,9 @@ date: Aug 22nd 2023
 ##### Aug 23 2023
 
 This report presents a data quality assessment of the dataset "CHAMPS Deidentified Verbal Autopsy Results." The objective is to identify and discuss data quality issues that may impact further data processing and analysis.
+
+\
+\
 
 <!-- NOT appeared this setup dependencies and datasetup -->
  ### Set up the dataset
@@ -91,12 +94,12 @@ freqtable(champs_raw, :"Id10186")
 ```julia; echo=false
 freqtable(champs_raw, :"Id10052")
 ```
-These inconsistencies can be rectified through a straightforward process, involving the conversion of text to lowercase and the standardization of responses such as 'doesn't know' and 'does not know' to the universally accepted abbreviation 'dk'.
+Addressing these irregularities is a straightforward task, involving a simple conversion to lowercase and a uniform adjustment of responses like 'doesn't know' and 'does not know' to the universally recognized abbreviation 'dk'. Additionally, enhancing consistency through the introduction of underscores for spaces between words can further refine the data quality.
 
 \
 
 ##### 3) Numerical Variables (Integer/Float)
-*Calculating issues and data quality check for Ages*
+*Calculating issues and data quality issues for Ages*
 
 Numerical variables, such as calculated ages, have a significant number of missing values.
 
@@ -117,7 +120,7 @@ describe(champs_raw[!, :ageInYears2])
 ```julia
 describe(champs_raw[!, :ageInYearsRemain])
 ```
-The range of *ageInYearsRemain* does not make sense at all. 
+The range of *ageInYearsRemain* variable lacks logical coherence and warrants further examination.
 
 \
 
@@ -208,7 +211,7 @@ end
 
 Date variables exhibit validity issues that warrant further investigation. 
 
-Range of Early 1900 and after 2021 does not make sense.
+The presence of dates before the early 1900s and beyond 2021 in the dataset seems unusual and requires closer scrutiny.
 
 \
 
@@ -217,7 +220,7 @@ Range of Early 1900 and after 2021 does not make sense.
 
 Time variables demonstrate inconsistencies in format. The variable *Id10011* presents challenges with its format and content. 
 
-Examples from *Id10011* for different lengths are as follows:
+- Examples from **Id10011:[Time at start of interview]** for different lengths are as follows:
 ```julia ; echo=false
 # Extract the "Id10011" column
 id10011_column = champs_raw[!, :Id10011]

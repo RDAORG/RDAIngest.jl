@@ -815,7 +815,8 @@ ill_ageInMonth3
 <p><br /></p>
 <h5>2&#41; Categorical Variables &#40;String&#41;</h5>
 <p><em>Inconsistencies thoughout the categorical variables</em></p>
-<p>Categorical variables are primarily represented as strings. Some inconsistencies exist in the value types for each category, including mixed upper/lower case and &quot;don&#39;t know&quot; answers.  Examples include:</p>
+<p>Categorical variables are primarily represented as strings. Some inconsistencies exist in the value types for each category, including mixed upper/lower case and &quot;don&#39;t know&quot; answers. </p>
+<p>Examples include:</p>
 <ul>
 <li><p><strong>Example1. Id10186</strong>: At any time during the final illness was there blood in the stools?</p>
 </li>
@@ -859,10 +860,11 @@ missing             │ 2044
 </pre>
 
 
-<p>These inconsistencies can be rectified through a straightforward process, involving the conversion of text to lowercase and the standardization of responses such as &#39;doesn&#39;t know&#39; and &#39;does not know&#39; to the universally accepted abbreviation &#39;DK&#39;.</p>
+<p>These inconsistencies can be rectified through a straightforward process, involving the conversion of text to lowercase and the standardization of responses such as &#39;doesn&#39;t know&#39; and &#39;does not know&#39; to the universally accepted abbreviation &#39;dk&#39;.</p>
 <p><br /></p>
 <h5>3&#41; Numerical Variables &#40;Integer/Float&#41;</h5>
-<p><em>Calculating issues and data quality check for Ages</em> Numerical variables, such as calculated ages, have a significant number of missing values.</p>
+<p><em>Calculating issues and data quality check for Ages</em></p>
+<p>Numerical variables, such as calculated ages, have a significant number of missing values.</p>
 <p>Examples include:</p>
 <ul>
 <li><p><strong>ageInDays</strong>: Calculated: &#40;:&#40;&#123;Id10023&#125;&#41; - :&#40;&#123;Id10021&#125;&#41;&#41;</p>
@@ -964,7 +966,7 @@ Type:           Union&#123;Missing, Float64&#125;
 </pre>
 
 
-<p>The range of ageInYearsRemain does not make sense at all. </p>
+<p>The range of <em>ageInYearsRemain</em> does not make sense at all. </p>
 <p><br /></p>
 <h4>4&#41; Date Variables</h4>
 <p><em>Validity issues with all the date variables</em> </p>
