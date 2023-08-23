@@ -4,7 +4,7 @@ author : Young
 date: Aug 22nd 2023
 -->
 
-# CHAMPS Verbal Autopsy Data Quality Assessment Report
+# **CHAMPS Verbal Autopsy Data Quality Assessment Report**
 ##### Yoonyoung Choi, Department of Sociology, The Ohio State University
 ##### Aug 23 2023
 
@@ -61,7 +61,9 @@ end
 ### Exploring Variable Types
 
 #### 1) Missing Variables 
-There are 89 variables that consist solely of missing values. Further investigation is needed to determine if these variables are as expected. The list of variables with only missing values is as follows:
+There are 89 variables that consist solely of missing values. Further investigation is needed to determine if these variables are as expected. 
+\
+The list of variables with only missing values is as follows:
 ```julia ; echo=false
 println("Variables with type Missing:")
 for col_name in names(champs_raw)
@@ -70,6 +72,7 @@ for col_name in names(champs_raw)
     end
 end
 ```
+\
 
 ##### 2) Categorical Variables (String)
 *Inconsistencies thoughout the categorical variables*
@@ -87,12 +90,14 @@ freqtable(champs_raw, :"Id10186")
 ```julia; echo=false
 freqtable(champs_raw, :"Id10052")
 ```
+These inconsistencies can be rectified through a straightforward process, involving the conversion of text to lowercase and the standardization of responses such as 'doesn't know' and 'does not know' to the universally accepted abbreviation 'DK'.
 
-These are actually very easy to fix to make all lowercase and make all doesn'know does not know answers to dk. 
+\
 
 ##### 3) Numerical Variables (Integer/Float)
 *Calculating issues and data quality check for Ages*
-Numerical variables, such as calculated ages, have a significant number of missing values.\ 
+Numerical variables, such as calculated ages, have a significant number of missing values.
+
 Examples include:
 - **ageInDays**: Calculated: (${Id10023} - ${Id10021})
 ```julia
@@ -110,7 +115,9 @@ describe(champs_raw[!, :ageInYears2])
 ```julia
 describe(champs_raw[!, :ageInYearsRemain])
 ```
-ageInYearsRemain especially does not make sense at all. 
+The range of ageInYearsRemain does not make sense at all. 
+
+\
 
 #### 4) Date Variables
 *Validity issues with all the date variables* 
@@ -154,7 +161,7 @@ else
 end
 ```
 
-##### Source data for Age Calculation \
+##### Source data for Age Calculation 
 Calculated: (${Id10023} - ${Id10021})
 
 - **Id10021: Date of Birth**
@@ -197,12 +204,17 @@ else
 end
 ```
 
-Date variables exhibit validity issues that warrant further investigation. Range of Early 1900 and after 2021 do not make sense.
+Date variables exhibit validity issues that warrant further investigation. 
+
+Range of Early 1900 and after 2021 does not make sense.
+
+\
 
 #### 5) Time variables 
 *Inconsistent format issues* 
 
 Time variables demonstrate inconsistencies in format. The variable *Id10011* presents challenges with its format and content. 
+
 Examples from *Id10011* for different lengths are as follows:
 ```julia ; echo=false
 # Extract the "Id10011" column
@@ -231,6 +243,7 @@ end
 ```
 \
 \
+
 ### Conclusion
 This data quality report provides a comprehensive overview of the dataset's characteristics and potential issues. 
 It serves as a foundation for further data cleaning and analysis. Addressing these data quality concerns will be crucial to ensuring accurate and reliable results.
