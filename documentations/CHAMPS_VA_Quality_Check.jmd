@@ -172,7 +172,7 @@ else
 end
 ```
 
-**Source data for Age Calculation** : (${Id10023} - ${Id10021})
+**Source data for ageInDays Calculation** : (${Id10023} - ${Id10021})
 
 - **Id10021: Date of Birth**
 ```julia ; echo=false
@@ -225,7 +225,7 @@ The presence of dates before the early 1900s and beyond 2022 in the dataset seem
 
 Time variables demonstrate inconsistencies in format. The variable *Id10011* presents challenges with its format and content. 
 
-- Examples from **Id10011:[Time at start of interview]** for different lengths are as follows:
+- Examples from **Id10011[Time at start of interview]** for different lengths are as follows:
 ```julia ; echo=false
 # Extract the "Id10011" column
 id10011_column = champs_raw[!, :Id10011]
