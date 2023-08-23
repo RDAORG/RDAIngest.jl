@@ -221,47 +221,31 @@ end
 ##### Gotta make sure if it is the valid values
 
 ### 5) Time variable - format issues 
-eltype(champs_raw[!, :Id10011])
-champs_raw[!, :Id10011]
+
 # Extract the "Id10011" column
 id10011_column = champs_raw[!, :Id10011]
-
 # Count the number of missing values
 id11_missing = count(ismissing, id10011_column)
 
-# Print the number of missing values
-println("Number of missing values for Id10011: $id11_missing")
-
-# Print the list of non-missing values
-println("List of non-missing values for Id10011:")
+# Get non-missing values
 non_missing_values = id10011_column[.!ismissing.(id10011_column)]
-println(non_missing_values)
+# Create a dictionary to store examples by length
+examples_by_length = Dict{Int, String}()
 
-
-
-
-# Get indices for head, middle, and last 10 rows
-n = size(champs_raw, 1)
-head_indices = 1:10
-middle_indices = max(1, n ÷ 2 - 5):min(n, n ÷ 2 + 4)
-last_indices = n-9:n
-
-# Define a function to get non-missing values
-function get_non_missing_values(indices, column)
-    non_missing_values = [value for (i, value) in enumerate(column) if i in indices && !ismissing(value)]
-    return non_missing_values
+# Iterate through non-missing values
+for value in non_missing_values
+    length_value = length(value)
+    if !haskey(examples_by_length, length_value)
+        examples_by_length[length_value] = value
+    end
 end
 
-# Get non-missing values for head, middle, and last 10 rows
-head_values = get_non_missing_values(head_indices, id10011_column)
-middle_values = get_non_missing_values(middle_indices, id10011_column)
-last_values = get_non_missing_values(last_indices, id10011_column)
-
-# Print non-missing values for head, middle, and last 10 rows
-println("Non-missing values for Id10011:")
-println("Head 10 rows: ", head_values)
-println("Middle 10 rows: ", middle_values)
-println("Last 10 rows: ", last_values)
+# Print example values for different lengths
+println("Example values from Id10011:")
+for (length, example) in examples_by_length
+    println("Length $length: $example")
+end
+##### Totally does not make sense or how to clean it. 
 
 #############################################
 ### STEP 2. CLEAN THE DATA (not processed yet)
