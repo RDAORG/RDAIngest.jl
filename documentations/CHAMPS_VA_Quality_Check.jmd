@@ -5,11 +5,10 @@ date: Aug 23 2023
 -->
 
 # **CHAMPS Verbal Autopsy Data Quality Assessment Report**
-###### **Yoonyoung Choi^a**
-###### **^a Institute of Population Research, The Ohio State University**
+###### **Yoonyoung Choi <sup>a</sup>**
+###### **<sup>a</sup> Institute of Population Research, The Ohio State University**
 ###### Aug 23 2023
 
-\
 \
 \
 
@@ -173,8 +172,7 @@ else
 end
 ```
 
-**Source data for Age Calculation**
-Calculated: (${Id10023} - ${Id10021})
+**Source data for Age Calculation** : (${Id10023} - ${Id10021})
 
 - **Id10021: Date of Birth**
 ```julia ; echo=false
