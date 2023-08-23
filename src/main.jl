@@ -51,6 +51,7 @@ CHAMPSIngest = Ingest(source_name = "CHAMPS",
                 quotechar = '"',
                 dateformat = "yyyy-mm-dd",
                 decimal = '.',
+                datainstruments = Dict("cdc_93759_DS9.pdf" => "CHAMPS_deid_verbal_autopsy"),
                 ingest_desc = "Raw CHAMPS Level-2 Data accessed 20230518",
                 transform_desc = "Ingest of CHAMPS Level-2 Data",
                 code_reference = "Multiple dispatch testing",
@@ -73,6 +74,7 @@ CHAMPSIngest1 = Ingest(source_name = "CHAMPS",
                 site_col = "site_iso_code",
                 datasets = Dict("CHAMPS deid tac results" => "CHAMPS_deid_tac_results", 
                 "CHAMPS deid lab results" => "CHAMPS_deid_lab_results"),
+                datainstruments = Dict("cdc_93759_DS9.pdf" => "CHAMPS_deid_verbal_autopsy"),
                 ingest_desc = "Ingest 2",
                 transform_desc = "Ingest 2",
                 code_reference = "step testing",
@@ -113,7 +115,7 @@ COMSAdict = AbstractDictionary(domain_name="COMSA",dictionaries=["Format_Comsa_W
 
 
 # Step 3: Ingest deaths to deathrows, return transformation_id and ingestion_id
-COMSAIngest2 = Ingest(source_name = "COMSA",
+COMSAIngest = Ingest(source_name = "COMSA",
                 datafolder = "De_identified_data",
                 death_file = "Comsa_WHO_VA_20230308",
                 death_idcol = "comsa_id",
@@ -123,15 +125,20 @@ COMSAIngest2 = Ingest(source_name = "COMSA",
                 quotechar = '"',
                 dateformat = "dd-u-yyyy", #"mmm dd, yyyy"
                 decimal = '.',
+                datainstruments = Dict("5a_2018_COMSA_VASA_ADULTS-EnglishOnly_01262019_clean.pdf" => "Comsa_WHO_VA_20230308",
+                "5a_2018_COMSA_VASA_CHILD-EnglishOnly_12152018Clean.pdf" => "Comsa_WHO_VA_20230308",
+                "5a_2018_COMSA_VASA_SB_NN-EnglishOnly_12152018Clean.pdf" => "Comsa_WHO_VA_20230308",
+                "5a_2018_COMSA_VASA-GenInfo_English_06272018_clean.pdf" => "Comsa_WHO_VA_20230308"),
                 ingest_desc = "Ingest raw COMSA Level-2 Data accessed 20230518",
                 transform_desc = "Ingest of COMSA Level-2 Data",
                 code_reference = "multiple dispatch testing",
                 author = "YC"
                 )
                 
-meta_info = ingest_deaths(COMSAIngest2,ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_INGEST_PATH"])
+meta_info = ingest_deaths(COMSAIngest,ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_INGEST_PATH"])
 
 # Step 4: Import datasets, and link datasets to deaths
 
-@time ingest_data(COMSAIngest2, ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_INGEST_PATH"],
+@time ingest_data(COMSAIngest, ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_INGEST_PATH"],
                 meta_info["transformation_id"], meta_info["ingestion_id"])
+

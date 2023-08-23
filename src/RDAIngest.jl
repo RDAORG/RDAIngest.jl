@@ -21,7 +21,7 @@ export
     add_domain, get_domain, 
     add_sites, read_sitedata, add_protocols, add_instruments, add_ethics, 
     add_variables, add_vocabulary, read_variables, get_vocabulary,
-    import_datasets, link_deathrows, death_in_ingest, dataset_in_ingest, 
+    import_datasets, link_instruments, link_deathrows, death_in_ingest, dataset_in_ingest, 
     add_ingestion, add_transformation, add_dataset_ingestion, add_transformation_output,
     
     add_data_column, lookup_variables, 
@@ -138,42 +138,6 @@ Base.@kwdef struct AbstractDictionary
     site_col::String = ""
 end
 
-#=
-# Prepare structs adding codes prepring the dictionary files Format_xxx.csv
-abstract type AbstractDictionary end
-Base.@kwdef struct CHAMPSDict <: AbstractDictionary
-    domain_name::String
-    domain_description::String 
-    #raw_dictionary_folder::String = "De_identified_data"
-    #raw_dictionary_file::String = ["CHAMPS De-Identified Data Set Description v4.2.pdf"]
-
-    dictionaries::Vector{String} = ["Format_CHAMPS_deid_basic_demographics", 
-                                     "Format_CHAMPS_deid_verbal_autopsy", 
-                                     "Format_CHAMPS_deid_decode_results",
-                                     "Format_CHAMPS_deid_tac_results", 
-                                     "Format_CHAMPS_deid_lab_results"]
-    delim::Char = ';'
-    quotechar::Char = '"'
-    dateformat::String = "yyyy-mm-dd"
-    decimal::Char = '.'
-end
-
-Base.@kwdef struct COMSADict  <: AbstractDictionary
-    domain_name::String
-    domain_description::String
-    #raw_dictionary_folder::String = "De_identified_data"
-    #raw_dictionary_file::Vector{String} = ["Comsa_data_dictionary_20190909.xlsx"]
-    #sheet::Vector{String} = ["all_WHO"]
-    #cellrange::Vector{String} = ["A7:C523"]
-
-    dictionaries::Vector{String} = ["Format_Comsa_WHO_VA_20230308"]
-    delim::Char = ';'
-    quotechar::Char = '"'
-    dateformat::String = "yyyy-mm-dd"
-    decimal::Char = '.'
-end
-=#
-
 Base.@kwdef struct Ingest
     source_name::String 
     datafolder::String = "De_identified_data"    
@@ -189,6 +153,9 @@ Base.@kwdef struct Ingest
     quotechar::Char = '"'
     dateformat::String = "yyyy-mm-dd"
     decimal::Char = '.'
+
+    # Matching instruments for instrument filename => datasets filename
+    datainstruments::Dict{String,String} 
 
     # Metadata for ingestion and transformation
     ingest_desc::String = "Ingest raw de-identified data"
@@ -323,8 +290,8 @@ Import datasets, and link datasets to deaths
 
 ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::String,
                         transformation_id::Int64, ingestion_id::Int64)
-# transformation_id and ingestion_id can be from step 3 outputs. 
-# If only importing dataset without ingesting deaths, run add_ingestion() and add_transformation() to get ids.
+# transformation_id and ingestion_id can be from step 3 outputs if ingesting both death and datasets at the same time.
+# If only importing dataset without ingesting deaths, run add_ingestion() and add_transformation() to get new ids.
 """
 
 function ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::String,
@@ -337,9 +304,11 @@ function ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::S
 
         for (key, value) in ingest.datasets
 
+            dataset_name = "$value"
+            dataset_desc = "$key"
             # Import datasets
             dataset_id = import_datasets(db, datapath, 
-                    ingest, "$value", "$key",
+                    ingest, dataset_name, dataset_desc,
                     domain, transformation_id, ingestion_id)
 
             # Link to deathrows
@@ -350,29 +319,26 @@ function ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::S
             if !death_in_ingest(db,ingestion_id)
                 println("Death data is not part of currrent data ingest $ingestion_id")
                 if death_ingestion_id===nothing
-                    source_ingests = DBInterface.execute(db, "SELECT data_ingestion_id FROM data_ingestions WHERE source_id = $source") |>DataFrame
-                    
-                    sql = """
-                    SELECT data_ingestion_id, COUNT(*) As n 
-                    FROM deaths 
-                    WHERE data_ingestion_id IN ($(join(source_ingests.data_ingestion_id, ",")))
-                    GROUP BY data_ingestion_id
-                    """
-                    death_ingests = DBInterface.execute(db, sql) |>DataFrame 
-                    if nrow(death_ingests) > 0 && any(x -> x > 0, death_ingests.n)
-                        death_ingestion_id = death_ingests.data_ingestion_id[death_ingests.n .>0][end]
-                        println("Death ingestion id not specified. By default, use lastest ingested deaths from source $(ingest.source_name) from ingestion id $death_ingestion_id.")
-                    else
-                        error("Death from source $(ingest.source_name) hasn't been ingested.")
-                    end
+                    death_ingestion_id = get_last_deathingest(db,source)
+                    println("Death ingestion id not specified. By default, use lastest ingested deaths from source $(ingest.source_name) from ingestion id $death_ingestion_id.")
+                else
+                    error("Death from source $(ingest.source_name) hasn't been ingested.")
                 end
             else
                 death_ingestion_id = ingestion_id
             end
             link_deathrows(db, death_ingestion_id, dataset_id, death_idvar)
 
-            println("Dataset $value imported and linked to deathrows.")
+            println("Dataset $dataset_name imported and linked to deathrows.")
+
         end
+
+        # Link to instruments in instrument_datasets
+        if !isempty(ingest.datainstruments) 
+            for (key1, value1) in ingest.datainstruments #instrument name, dataset name
+                link_instruments(db, "$key1","$value1") 
+            end
+        end    
 
     finally
     close(db)
@@ -955,6 +921,37 @@ function lookup_variables(db::SQLite.DB, variable_names, domain)
 end
 
 
+
+"""
+    link_instruments(db::SQLite.DB, instrument_name, dataset_name)
+
+Insert records into `instrument_datasets` table, linking datasets with instruments.
+"""
+function link_instruments(db::SQLite.DB, instrument_name::String, dataset_name::String)
+    
+    # get id for dataset and matching instrument
+    dataset_id = get_namedkey(db, "datasets", dataset_name, :dataset_id)
+    instrument_id = get_namedkey(db, "instruments", instrument_name, :instrument_id)
+
+    if ismissing(dataset_id)
+        error("Data file $dataset_name is not ingested.")
+    end
+    if ismissing(instrument_id)
+        error("Instrument file $instrument_name is not ingested.")
+    end
+
+    # Insert into db
+    sql = """
+    INSERT INTO instrument_datasets(instrument_id, dataset_id) 
+    VALUES (@instrument_id, @dataset_id);
+    """
+    stmt = DBInterface.prepare(db, sql)
+    DBInterface.execute(stmt, (instrument_id=instrument_id, dataset_id=dataset_id))
+
+    return println("Linked dataset $dataset_name to instrument $instrument_name")
+end
+
+
 """
     link_deathrows(db::SQLite.DB, ingestion_id, dataset_id, death_identifier)
 
@@ -1167,6 +1164,32 @@ function savedataframe(db::SQLite.DB, df::AbstractDataFrame, table)
     stmt = DBInterface.prepare(db, sql)
     for row in eachrow(df)
         DBInterface.execute(stmt, NamedTuple(row))
+    end
+end
+
+"""
+    get_last_deathingest(source)
+
+Get ingestion id for latest death ingestion for source
+"""
+function get_last_deathingest(db::SQLite.DB, source_name::String)
+    
+    source=get_source(db,source_name)
+    
+    source_ingests = DBInterface.execute(db, "SELECT data_ingestion_id FROM data_ingestions WHERE source_id = $source") |>DataFrame
+                    
+    sql = """
+    SELECT data_ingestion_id, COUNT(*) As n 
+    FROM deaths 
+    WHERE data_ingestion_id IN ($(join(source_ingests.data_ingestion_id, ",")))
+    GROUP BY data_ingestion_id
+    """
+    death_ingests = DBInterface.execute(db, sql) |>DataFrame 
+    if nrow(death_ingests) > 0 && any(x -> x > 0, death_ingests.n)
+        death_ingestion_id = death_ingests.data_ingestion_id[death_ingests.n .>0][end]
+        return death_ingestion_id
+    else
+        error("Death from source $source_name hasn't been ingested.")
     end
 end
 
