@@ -234,7 +234,26 @@ for (length, example) in examples_by_length
 end
 
 #############################################
-### STEP 2. CLEAN THE DATA (not processed yet)
+### STEP 2. Detect the missing data patterns
+#############################################
+
+# By region
+# Id10054: Place of Birth // no valid info on the geographic information
+freqtable(champs_raw, :"Id10054")
+
+# Just few info on the limited facility info
+# Id10058: Where did the deceased die?
+freqtable(champs_raw, :"Id10058")
+
+freqtable(champs_raw, :"Id10433")
+
+
+
+
+
+
+#############################################
+### STEP 3. CLEAN THE DATA (not processed yet)
 #############################################
 
 # 1. Every string variable should be in the lowercase.
