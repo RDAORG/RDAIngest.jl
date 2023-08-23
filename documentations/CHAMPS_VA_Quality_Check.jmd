@@ -13,11 +13,12 @@ Using the dataset *"CHAMPS_ deid_ verbal_ autopsy_ results"*, the data quality c
 
 
 <!-- NOT appeared this setup dependencies and datasetup -->
- 0. Set up the dataset
-```julia; echo=false
+ ### 0. Set up the dataset
+```julia; echo=false; results="hidden"
 using CSV
 using DataFrames
 using Pkg
+using Dates
 "FreqTables" ∉ keys(Pkg.project().dependencies) && Pkg.add("FreqTables")
 "StatsBase" ∉ keys(Pkg.project().dependencies) && Pkg.add("StatsBase")
 using FreqTables
@@ -26,17 +27,16 @@ filename = "champs_df2"
 path = "/Users/young/Documents/GitHub/RDAIngest.jl/"
 file = joinpath(path, "$filename.csv")
 champs_raw = CSV.File(file; delim=',', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
-
 ```
 
-1. Describe the dataset 
+### 1. Describe the dataset 
 
-### 1) Data Size
+1) Data Size
 ```julia 
 size(champs_raw)
 ```
 
-### 2) Data types 
+2) Data types 
 ```julia
 column_types = Dict{Symbol, Type}()
 for col in names(champs_raw)
@@ -54,11 +54,11 @@ for (col_type, count) in type_counts
 end
 ```
 
-2. Looking closely into each variable type
+### 2. Looking closely into each variable type
 
-### 1) Missing Variables 
+#### 1) Missing Variables 
 There are 89 variables of consisting only missing values. We need to discuss whether these variables are supposed to be looked like this. 
-The list of variables only of missing value is here 
+The list of variables only of missing value is here:
 ```julia
 println("Variables with type Missing:")
 for col_name in names(champs_raw)
@@ -68,35 +68,45 @@ for col_name in names(champs_raw)
 end
 ```
 
-### 2) Categorical Variables (String)
-### Inconsistencies thoughout the categorical variables
+##### 2) Categorical Variables (String)
+*Inconsistencies thoughout the categorical variables*
+
 Most variables are categorical which is typed in String. 
 
-#### eg 1. At any time during the final illness was there blood in the stools?
+Example 1. At any time during the final illness was there blood in the stools?
+```julia
 freqtable(champs_raw, :"Id10186")
+```
 
-#### eg 2. What is your/the respondent's relationship to the deceased?
+Example 2. What is your/the respondent's relationship to the deceased?
+```julia
 freqtable(champs_raw, :"Id10008")
-
+```
 Most of them have inconsistent value types for each categories (mixed upper/lower case) DK answers
 These are actually very easy to fix to make all lowercase and make all doesn'know does not know answers to dk. 
 
-### 3) Numerical Variables (Integer/Float)
-### Calculating issues and data quality check for **Ages**
+##### 3) Numerical Variables (Integer/Float)
+*Calculating issues and data quality check for **Ages***
 
-##### Calculated ages have so many missing values. 
+Calculated ages have so many missing values. 
 ```julia
 describe(champs_raw[!, :ageInDays])
+```
+```julia
 describe(champs_raw[!, :ageInYears])
+```
+```julia
 describe(champs_raw[!, :ageInYears2])
+```
+```julia
 describe(champs_raw[!, :ageInYearsRemain])
 ```
 ageInYearsRemain especially does not make sense at all. 
 
-### 4) Date Variables
-### Validity issues with all the date variables 
+#### 4) Date Variables
+*Validity issues with all the date variables* 
 
-#### List of date variables
+List of date variables
 ```julia
 date_union_vars = []
 date_vars = []
@@ -115,8 +125,8 @@ for var in append!(date_union_vars, date_vars)
 end
 ```
 
-#### Id10012: Date of interview
-```julia
+- Id10012: Date of interview
+```julia ; echo=false
 # Extract the "Id10012" date column
 id10012_dates = champs_raw[!, :Id10012]
 # Count missing values
@@ -134,11 +144,12 @@ else
     println("No valid dates found.")
 end
 ```
-These dates do not make sense 
+These dates do not make sense.
 
-#### Source data for Age Calculation //Calculated: (${Id10023} - ${Id10021})
-#### Id10021: When was the deceased born?
-```julia
+- Source data for Age Calculation //Calculated: (${Id10023} - ${Id10021})
+
+- 1. Id10021: When was the deceased born?
+```julia ; echo=false
 # Extract the "Id10021" date column
 id10021_dates = champs_raw[!, :Id10021]
 # Count missing values
@@ -157,8 +168,8 @@ else
 end
 ```
 
-#### Id10023: When did (s)he die?
-```julia
+- 2. Id10023: When did (s)he die?
+```julia ; echo=false
 # Extract the "Id10023" date column
 id10023_dates = champs_raw[!, :Id10023]
 # Count missing values
@@ -177,11 +188,12 @@ else
 end
 ```
 
-Gotta make sure if it is the valid values
+Gotta make sure if it is the valid values. Range of Early 1900 and after 2021 do not make sense.
 
-### 5) Time variable - format issues 
+#### 5) Time variables 
+*Inconsistent format issues* 
 
-```julia
+```julia ; echo=false
 # Extract the "Id10011" column
 id10011_column = champs_raw[!, :Id10011]
 # Count the number of missing values
