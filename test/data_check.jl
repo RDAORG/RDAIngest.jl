@@ -1,6 +1,6 @@
 # Data quality check 
 # Young 
-# Last Updated: Aug 22 2023
+# Last Updated: Aug 23 2023
 
 using ConfigEnv
 using DBInterface
@@ -13,7 +13,7 @@ using Dates
 using Arrow
 using CSV
 
-#get environment variables #change the path in .env file
+#Get environment variables #change the path in .env file
 dotenv()
 
 #Get the DB in SQL outputdatasets 
@@ -23,7 +23,9 @@ db = opendatabase(ENV["RDA_DATABASE_PATH"], "RDA")
 DBInterface.execute(db, "SELECT * FROM value_types";) |> DataFrame
 DBInterface.execute(db, "SELECT * FROM datasets";) |> DataFrame
 
-# Set up the [CHAMPS verbal autopsy] as dataframe - dataset_id ==5
+##############################################
+### STEP 0. Set up the [CHAMPS verbal autopsy] as dataframe -> dataset_id ==5
+##############################################
 
 # Query data for rows with dataset_id = 5
 data_query = """
@@ -49,11 +51,11 @@ champs_df2 = unstack(champs_df1, :row_id,  :name, :value)
 
 names(champs_df2) # 457 variables 
 
-# Save the DataFrame to a CSV file to view the dataframe
+# Save the DataFrame to a CSV file to explore the dataframe
 CSV.write("champs_df2.csv", champs_df2)
 
 # Check the unique values of each variable ()
-unique(champs_df2[!, "Id10358"])
+unique(champs_df2[!, "Id10359"])
 
 """# Problematic variables from 457 variables
 fix type: ["Id10024", "Id10248","Id10250","Id10262","Id10266","Id10352"] 
@@ -61,10 +63,74 @@ Surely need to clean values: ["Id10106", "Id10108", "Id10161_0","Id10161_1","Id1
                "Id10285","Id10358","Id10359","Id10367","Id10379","Id10380","Id10382","Id10392","Id10394"
                ] 
 """
+#######################################
+### STEP 2. Documentation of data quality of raw data in Markdown 
+###(CHAMPS_VA_Quality_Check.jmd)
+#######################################
 
-# CLEAN THE DATA 
+## 0. Set up the CHAMPS VA dataset
+using CSV
+using DataFrames
+using Pkg
+"FreqTables" ∉ keys(Pkg.project().dependencies) && Pkg.add("FreqTables")
+"StatsBase" ∉ keys(Pkg.project().dependencies) && Pkg.add("StatsBase")
+using FreqTables
+using StatsBase
+filename = "champs_df2"
+path = "/Users/young/Documents/GitHub/RDAIngest.jl/"
+file = joinpath(path, "$filename.csv")
+champs_raw = CSV.File(file; delim=',', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
 
-## STEP 1: Every string variable should be in the lowercase.
+
+## 1. Describe the dataset 
+
+### 1) Data Size
+size(champs_raw)
+
+### 2) Data types 
+column_types = Dict{Symbol, Type}()
+for col in names(champs_raw)
+    column_types[Symbol(col)] = eltype(champs_raw[!, col])
+end
+
+unique_types = Set(values(column_types))
+
+type_counts = Dict{Type, Int}()
+for col_type in values(column_types)
+    type_counts[col_type] = get(type_counts, col_type, 0) + 1
+end
+
+println("Summary of variable types:")
+for (col_type, count) in type_counts
+    println("$col_type: $count variables")
+end
+
+## 2. Looking closely into each variable type
+
+### 
+println("Variables with type Missing:")
+for col_name in names(champs_raw)
+    if eltype(champs_raw[!, col_name]) == Missing
+        println(col_name)
+    end
+end
+
+### 1) Categorical Variables (String)
+##### Most variables are categorical which is typed in String. 
+
+#### example Q. At any time during the final illness was there blood in the stools?
+freqtable(champs_raw, :"Id10186")
+
+freqtable(champs_raw, :"Id10193")
+
+
+
+
+#############################################
+### STEP 3. CLEAN THE DATA (not processed yet)
+#############################################
+
+# 1. Every string variable should be in the lowercase.
 
 # Create a copy of the original DataFrame
 champs_df3 = copy(champs_df2)
@@ -113,93 +179,4 @@ freqtable(champs_df3, :"Id10186")
 # Save the DataFrame to a CSV file to check the dataframe
 CSV.write("champs_df3.csv", champs_df3)
 
-## STEP 3: make 
 
-# TEST #################################
-using CSV
-using DataFrames
-"FreqTables" ∉ keys(Pkg.project().dependencies) && Pkg.add("FreqTables")
-using FreqTables
-filename = "champs_df2"
-path = "/Users/young/Documents/GitHub/RDAIngest.jl/"
-file = joinpath(path, "$filename.csv")
-champs_raw = CSV.File(file; delim=',', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
-
-freqtable(champs_raw, :"Id10186")
-
-freqtable(champs_raw, :"Id10193")
-
-
-
-
-
-
-
-##Data type####################################
-"""
-    get_datatype(db::SQLite.DB, domain)::AbstractDataFrame
-
-Get variable value types for dataset
-
-"""
-
-function get_datatype(db::SQLite.DB, dataset_id)::AbstractDataFrame
-
-    var_ids = DBInterface.execute(db, "SELECT variable_id FROM dataset_variables WHERE dataset_id = $dataset_id;") |> DataFrame
-
-    sql = """
-
-          SELECT variable_id, name, value_type_id FROM variables
-          WHERE variable_id IN ($(join(var_ids.variable_id, ",")));
-
-      """
-
-    return DBInterface.execute(db, sql) |> DataFrame
-
-end
-
-get_datatype(db, 2)
-
-
-
-for col in var_type.name[(var_type.value_type_id .== 1)]
-
-            if eltype(df[!, col]) == Union{Missing, String}
-
-                df[!, col] = [ismissing(x) ? missing : parse.(Float64,x) for x in df[!, col]]
-
-            end
-
-            df[!, col] = [ismissing(x) ? missing : convert.(Int,x) for x in df[!, col]]
-
-        end
-
-        for col in var_type.name[(var_type.value_type_id .== 2)]
-
-            df[!, col] = [ismissing(x) ? missing : convert.(Float64,x) for x in df[!, col]]
-
-        end
-
-        for col in var_type.name[(var_type.value_type_id .== 3)]
-
-            df[!, col] = [ismissing(x) ? missing : lowercase(x) for x in df[!, col]]
-
-        end
-
-        for col in var_type.name[(var_type.value_type_id .== 4)]
-
-            df[!, col] = [ismissing(x) ? missing : Date(x) for x in df[!, col]]
-
-        end
-
-        for col in var_type.name[(var_type.value_type_id .== 5)]
-
-            df[!, col] = [ismissing(x) ? missing : Dates.format(x, "yyyy-mm-ddTHH:mm:ss.sss") for x in df[!, col]]
-
-        end
-
-        for col in var_type.name[(var_type.value_type_id .== 6)]
-
-            df[!, col] = [ismissing(x) ? missing : Dates.format(x, "HH:mm:ss.sss") for x in df[!, col]]
-
-        end
