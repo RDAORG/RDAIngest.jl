@@ -78,6 +78,7 @@ end
 *Inconsistencies thoughout the categorical variables*
 
 Categorical variables are primarily represented as strings. Some inconsistencies exist in the value types for each category, including mixed upper/lower case and "don't know" answers. 
+
 Examples include:
 
 
@@ -90,12 +91,13 @@ freqtable(champs_raw, :"Id10186")
 ```julia; echo=false
 freqtable(champs_raw, :"Id10052")
 ```
-These inconsistencies can be rectified through a straightforward process, involving the conversion of text to lowercase and the standardization of responses such as 'doesn't know' and 'does not know' to the universally accepted abbreviation 'DK'.
+These inconsistencies can be rectified through a straightforward process, involving the conversion of text to lowercase and the standardization of responses such as 'doesn't know' and 'does not know' to the universally accepted abbreviation 'dk'.
 
 \
 
 ##### 3) Numerical Variables (Integer/Float)
 *Calculating issues and data quality check for Ages*
+
 Numerical variables, such as calculated ages, have a significant number of missing values.
 
 Examples include:
@@ -115,7 +117,7 @@ describe(champs_raw[!, :ageInYears2])
 ```julia
 describe(champs_raw[!, :ageInYearsRemain])
 ```
-The range of ageInYearsRemain does not make sense at all. 
+The range of *ageInYearsRemain* does not make sense at all. 
 
 \
 

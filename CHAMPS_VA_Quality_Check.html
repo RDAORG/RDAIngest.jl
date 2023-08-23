@@ -665,7 +665,7 @@ author : Young
 date: Aug 22nd 2023
  -->
 
-<h1>CHAMPS Verbal Autopsy Data Quality Assessment Report</h1>
+<h1><strong>CHAMPS Verbal Autopsy Data Quality Assessment Report</strong></h1>
 <h5>Yoonyoung Choi, Department of Sociology, The Ohio State University</h5>
 <h5>Aug 23 2023</h5>
 <p>This report presents a data quality assessment of the dataset &quot;CHAMPS Deidentified Verbal Autopsy Results.&quot; The objective is to identify and discuss data quality issues that may impact further data processing and analysis.</p>
@@ -716,7 +716,7 @@ String: 1 variables
 <p><br /><br /></p>
 <h3>Exploring Variable Types</h3>
 <h4>1&#41; Missing Variables</h4>
-<p>There are 89 variables that consist solely of missing values. Further investigation is needed to determine if these variables are as expected. The list of variables with only missing values is as follows:</p>
+<p>There are 89 variables that consist solely of missing values. Further investigation is needed to determine if these variables are as expected.  <br />The list of variables with only missing values is as follows:</p>
 
 <pre class="output">
 Variables with type Missing:
@@ -812,6 +812,7 @@ ill_ageInMonth3
 </pre>
 
 
+<p><br /></p>
 <h5>2&#41; Categorical Variables &#40;String&#41;</h5>
 <p><em>Inconsistencies thoughout the categorical variables</em></p>
 <p>Categorical variables are primarily represented as strings. Some inconsistencies exist in the value types for each category, including mixed upper/lower case and &quot;don&#39;t know&quot; answers.  Examples include:</p>
@@ -858,9 +859,11 @@ missing             │ 2044
 </pre>
 
 
-<p>These are actually very easy to fix to make all lowercase and make all doesn&#39;know does not know answers to dk. </p>
+<p>These inconsistencies can be rectified through a straightforward process, involving the conversion of text to lowercase and the standardization of responses such as &#39;doesn&#39;t know&#39; and &#39;does not know&#39; to the universally accepted abbreviation &#39;DK&#39;.</p>
+<p><br /></p>
 <h5>3&#41; Numerical Variables &#40;Integer/Float&#41;</h5>
-<p><em>Calculating issues and data quality check for Ages</em> Numerical variables, such as calculated ages, have a significant number of missing values.\  Examples include:</p>
+<p><em>Calculating issues and data quality check for Ages</em> Numerical variables, such as calculated ages, have a significant number of missing values.</p>
+<p>Examples include:</p>
 <ul>
 <li><p><strong>ageInDays</strong>: Calculated: &#40;:&#40;&#123;Id10023&#125;&#41; - :&#40;&#123;Id10021&#125;&#41;&#41;</p>
 </li>
@@ -961,7 +964,8 @@ Type:           Union&#123;Missing, Float64&#125;
 </pre>
 
 
-<p>ageInYearsRemain especially does not make sense at all. </p>
+<p>The range of ageInYearsRemain does not make sense at all. </p>
+<p><br /></p>
 <h4>4&#41; Date Variables</h4>
 <p><em>Validity issues with all the date variables</em> </p>
 <ul>
@@ -991,7 +995,7 @@ Number of missing values: 572
 </pre>
 
 
-<h5>Source data for Age Calculation \</h5>
+<h5>Source data for Age Calculation</h5>
 <p>Calculated: &#40;:&#40;&#123;Id10023&#125;&#41; - :&#40;&#123;Id10021&#125;&#41;&#41;</p>
 <ul>
 <li><p><strong>Id10021: Date of Birth</strong></p>
@@ -1015,10 +1019,13 @@ Number of missing values: 497
 </pre>
 
 
-<p>Date variables exhibit validity issues that warrant further investigation. Range of Early 1900 and after 2021 do not make sense.</p>
+<p>Date variables exhibit validity issues that warrant further investigation. </p>
+<p>Range of Early 1900 and after 2021 does not make sense.</p>
+<p><br /></p>
 <h4>5&#41; Time variables</h4>
 <p><em>Inconsistent format issues</em> </p>
-<p>Time variables demonstrate inconsistencies in format. The variable <em>Id10011</em> presents challenges with its format and content.  Examples from <em>Id10011</em> for different lengths are as follows:</p>
+<p>Time variables demonstrate inconsistencies in format. The variable <em>Id10011</em> presents challenges with its format and content. </p>
+<p>Examples from <em>Id10011</em> for different lengths are as follows:</p>
 
 <pre class="output">
 Example values from Id10011:
@@ -1037,7 +1044,9 @@ Length 10: 2:38:00 PM
 </pre>
 
 
-<p><br /><br />### Conclusion This data quality report provides a comprehensive overview of the dataset&#39;s characteristics and potential issues.  It serves as a foundation for further data cleaning and analysis. Addressing these data quality concerns will be crucial to ensuring accurate and reliable results.</p>
+<p><br /><br /></p>
+<h3>Conclusion</h3>
+<p>This data quality report provides a comprehensive overview of the dataset&#39;s characteristics and potential issues.  It serves as a foundation for further data cleaning and analysis. Addressing these data quality concerns will be crucial to ensuring accurate and reliable results.</p>
 
 
         <HR/>

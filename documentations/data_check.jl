@@ -72,6 +72,7 @@ Surely need to clean values: ["Id10106", "Id10108", "Id10161_0","Id10161_1","Id1
 using CSV
 using DataFrames
 using Pkg
+using Dates
 "FreqTables" ∉ keys(Pkg.project().dependencies) && Pkg.add("FreqTables")
 "StatsBase" ∉ keys(Pkg.project().dependencies) && Pkg.add("StatsBase")
 using FreqTables
@@ -108,7 +109,6 @@ end
 ## 2. Looking closely into each variable type
 
 ### 1) Missing Variables 
-#### There are 89 variables of consisting only missing values. We need to discuss whether these variables are supposed to be looked like this. 
 #### The list of variables only of missing value is here 
 println("Variables with type Missing:")
 for col_name in names(champs_raw)
@@ -118,29 +118,20 @@ for col_name in names(champs_raw)
 end
 
 ### 2) Categorical Variables (String)
-### Inconsistencies thoughout the categorical variables
-##### Most variables are categorical which is typed in String. 
-
 #### eg 1. At any time during the final illness was there blood in the stools?
 freqtable(champs_raw, :"Id10186")
 
-#### eg 2. What is your/the respondent's relationship to the deceased?
-freqtable(champs_raw, :"Id10008")
+#### eg 2. What was her/his citizenship/nationality?
+freqtable(champs_raw, :"Id10052")
 
-##### Most of them have inconsistent value types for each categories (mixed upper/lower case) DK answers
-##### These are actually very easy to fix to make all lowercase and make all doesn'know does not know answers to dk. 
 
 ### 3) Numerical Variables (Integer/Float)
-### Calculating issues and data quality check for Ages 
 
 ##### Calculated ages have so many missing values. 
 describe(champs_raw[!, :ageInDays])
-
 describe(champs_raw[!, :ageInYears])
 describe(champs_raw[!, :ageInYears2])
 describe(champs_raw[!, :ageInYearsRemain])
-
-##### ageInYearsRemain especially does not make sense at all. 
 
 
 ### 4) Date Variables
@@ -179,8 +170,6 @@ else
     println("No valid dates found.")
 end
 
-##### Does not make sense 
-
 ### Source data for Age Calculation //Calculated: (${Id10023} - ${Id10021})
 ## Id10021: When was the deceased born?
 # Extract the "Id10021" date column
@@ -218,10 +207,8 @@ else
     println("No valid dates found.")
 end
 
-##### Gotta make sure if it is the valid values
 
 ### 5) Time variable - format issues 
-
 # Extract the "Id10011" column
 id10011_column = champs_raw[!, :Id10011]
 # Count the number of missing values
@@ -245,7 +232,6 @@ println("Example values from Id10011:")
 for (length, example) in examples_by_length
     println("Length $length: $example")
 end
-##### Totally does not make sense or how to clean it. 
 
 #############################################
 ### STEP 2. CLEAN THE DATA (not processed yet)
