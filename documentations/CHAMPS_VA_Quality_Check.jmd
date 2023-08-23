@@ -172,7 +172,7 @@ else
 end
 ```
 
-**Source data for ageInDays Calculation** : (${Id10023} - ${Id10021})
+Source data for *ageInDays* Calculation : (${Id10023} - ${Id10021})
 
 - **Id10021: Date of Birth**
 ```julia ; echo=false
