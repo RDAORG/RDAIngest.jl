@@ -5,7 +5,7 @@ date: Aug 22nd 2023
 -->
 
 # CHAMPS Verbal Autopsy Data Quality Assessment Report
-##### Yoonyoung Choi, The Ohio State University
+##### Yoonyoung Choi, Department of Sociology, The Ohio State University
 ##### Aug 23 2023
 
 This report presents a data quality assessment of the dataset "CHAMPS Deidentified Verbal Autopsy Results." The objective is to identify and discuss data quality issues that may impact further data processing and analysis.
@@ -28,6 +28,8 @@ path = "/Users/young/Documents/GitHub/RDAIngest.jl/"
 file = joinpath(path, "$filename.csv")
 champs_raw = CSV.File(file; delim=',', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
 ```
+\
+\
 
 ### Dataset overview
 
@@ -53,6 +55,8 @@ for (col_type, count) in type_counts
     println("$col_type: $count variables")
 end
 ```
+\
+\
 
 ### Exploring Variable Types
 
@@ -74,36 +78,35 @@ Categorical variables are primarily represented as strings. Some inconsistencies
 Examples include:
 
 
-- **Example 1.Id10186**. At any time during the final illness was there blood in the stools?
+- **Example1. Id10186**: At any time during the final illness was there blood in the stools?
 ```julia; echo=false
 freqtable(champs_raw, :"Id10186")
 ```
 
-- **Example 2.Id1008**. What is your/the respondent's relationship to the deceased?
+- **Example2. Id10052**: What was her/his citizenship/nationality?
 ```julia; echo=false
-freqfamily=freqtable(champs_raw, :"Id10008")
-println(freqfamily)
+freqtable(champs_raw, :"Id10052")
 ```
 
 These are actually very easy to fix to make all lowercase and make all doesn'know does not know answers to dk. 
 
 ##### 3) Numerical Variables (Integer/Float)
 *Calculating issues and data quality check for Ages*
-Numerical variables, such as calculated ages, have a significant number of missing values. 
+Numerical variables, such as calculated ages, have a significant number of missing values.\ 
 Examples include:
-- **ageInDays**
+- **ageInDays**: Calculated: (${Id10023} - ${Id10021})
 ```julia
 describe(champs_raw[!, :ageInDays])
 ```
-- **ageInYears**
+- **ageInYears**: Calculated: int(${ageInDays} div 365.25)
 ```julia
 describe(champs_raw[!, :ageInYears])
 ```
-- **ageInYears2**
+- **ageInYears2**: Calculated: int(${ageInMonthsByYear} div 12)
 ```julia
 describe(champs_raw[!, :ageInYears2])
 ```
-- **ageInYearsRemain**
+- **ageInYearsRemain**:Calculated: ${ageInDays} mod 365.25
 ```julia
 describe(champs_raw[!, :ageInYearsRemain])
 ```
@@ -151,7 +154,8 @@ else
 end
 ```
 
-##### Source data for Age Calculation //Calculated: (${Id10023} - ${Id10021})
+##### Source data for Age Calculation \
+Calculated: (${Id10023} - ${Id10021})
 
 - **Id10021: Date of Birth**
 ```julia ; echo=false
@@ -198,8 +202,8 @@ Date variables exhibit validity issues that warrant further investigation. Range
 #### 5) Time variables 
 *Inconsistent format issues* 
 
-Time variables demonstrate inconsistencies in format. The variable "Id10011" presents challenges with its format and content. 
-Examples from "Id10011" for different lengths are as follows:
+Time variables demonstrate inconsistencies in format. The variable *Id10011* presents challenges with its format and content. 
+Examples from *Id10011* for different lengths are as follows:
 ```julia ; echo=false
 # Extract the "Id10011" column
 id10011_column = champs_raw[!, :Id10011]
@@ -225,6 +229,8 @@ for (length, example) in examples_by_length
     println("Length $length: $example")
 end
 ```
+\
+\
 ### Conclusion
 This data quality report provides a comprehensive overview of the dataset's characteristics and potential issues. 
 It serves as a foundation for further data cleaning and analysis. Addressing these data quality concerns will be crucial to ensuring accurate and reliable results.
