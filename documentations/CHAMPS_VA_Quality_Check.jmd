@@ -4,58 +4,206 @@ author : Young
 date: Aug 22nd 2023
 -->
 
-# CHAMPS Verbal Autopsy Data Quality Check
-##### Yoonyoung Choi
-##### Aug 22nd 2023
+# CHAMPS Verbal Autopsy Data Quality Report
+##### Yoonyoung Choi, Sociology, The Ohio State University
+##### Aug 23 2023
 
 
 Using the dataset *"CHAMPS_ deid_ verbal_ autopsy_ results"*, the data quality check to discuss further process. 
 
 
 <!-- NOT appeared this setup dependencies and datasetup -->
- ### Set up the dataset
+ 0. Set up the dataset
 ```julia; echo=false
-using Pkg
 using CSV
 using DataFrames
+using Pkg
 "FreqTables" ∉ keys(Pkg.project().dependencies) && Pkg.add("FreqTables")
+"StatsBase" ∉ keys(Pkg.project().dependencies) && Pkg.add("StatsBase")
 using FreqTables
+using StatsBase
 filename = "champs_df2"
 path = "/Users/young/Documents/GitHub/RDAIngest.jl/"
 file = joinpath(path, "$filename.csv")
-```
-
-```julia
 champs_raw = CSV.File(file; delim=',', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
+
 ```
 
-# 1. Types of inconsistencies
+1. Describe the dataset 
 
-## Calculating frequency response
+### 1) Data Size
+```julia 
+size(champs_raw)
+```
 
-
-DSP.jl package doesn't (yet) have a method to calculate the
-the frequency response of a FIR filter so we define it:
-
+### 2) Data types 
 ```julia
+column_types = Dict{Symbol, Type}()
+for col in names(champs_raw)
+    column_types[Symbol(col)] = eltype(champs_raw[!, col])
+end
+
+type_counts = Dict{Type, Int}()
+for col_type in values(column_types)
+    type_counts[col_type] = get(type_counts, col_type, 0) + 1
+end
+
+println("Summary of variable types:")
+for (col_type, count) in type_counts
+    println("$col_type: $count variables")
+end
+```
+
+2. Looking closely into each variable type
+
+### 1) Missing Variables 
+There are 89 variables of consisting only missing values. We need to discuss whether these variables are supposed to be looked like this. 
+The list of variables only of missing value is here 
+```julia
+println("Variables with type Missing:")
+for col_name in names(champs_raw)
+    if eltype(champs_raw[!, col_name]) == Missing
+        println(col_name)
+    end
+end
+```
+
+### 2) Categorical Variables (String)
+### Inconsistencies thoughout the categorical variables
+Most variables are categorical which is typed in String. 
+
+#### eg 1. At any time during the final illness was there blood in the stools?
 freqtable(champs_raw, :"Id10186")
+
+#### eg 2. What is your/the respondent's relationship to the deceased?
+freqtable(champs_raw, :"Id10008")
+
+Most of them have inconsistent value types for each categories (mixed upper/lower case) DK answers
+These are actually very easy to fix to make all lowercase and make all doesn'know does not know answers to dk. 
+
+### 3) Numerical Variables (Integer/Float)
+### Calculating issues and data quality check for **Ages**
+
+##### Calculated ages have so many missing values. 
+```julia
+describe(champs_raw[!, :ageInDays])
+describe(champs_raw[!, :ageInYears])
+describe(champs_raw[!, :ageInYears2])
+describe(champs_raw[!, :ageInYearsRemain])
+```
+ageInYearsRemain especially does not make sense at all. 
+
+### 4) Date Variables
+### Validity issues with all the date variables 
+
+#### List of date variables
+```julia
+date_union_vars = []
+date_vars = []
+for col_name in names(champs_raw)
+    col_type = eltype(champs_raw[!, col_name])
+    if col_type == Union{Missing, Date}
+        push!(date_union_vars, col_name)
+    elseif col_type == Date
+        push!(date_vars, col_name)
+    end
+end
+
+println("Variables of dates:")
+for var in append!(date_union_vars, date_vars)
+    println(var)
+end
 ```
 
-## Design Lowpass FIR filter
+#### Id10012: Date of interview
+```julia
+# Extract the "Id10012" date column
+id10012_dates = champs_raw[!, :Id10012]
+# Count missing values
+id12_missing = count(ismissing, id10012_dates)
+# Remove missing values
+id12_dates = filter(x -> !ismissing(x), id10012_dates)
 
+# Calculate the minimum and maximum valid dates
+if !isempty(id12_dates)
+    min_date = minimum(id12_dates)
+    max_date = maximum(id12_dates)
+    println("Range of valid dates for Id10012: $min_date to $max_date")
+    println("Number of missing values: $id12_missing")
+else
+    println("No valid dates found.")
+end
+```
+These dates do not make sense 
 
-Designing a lowpass FIR filter is very simple to do with DSP.jl, all you
+#### Source data for Age Calculation //Calculated: (${Id10023} - ${Id10021})
+#### Id10021: When was the deceased born?
+```julia
+# Extract the "Id10021" date column
+id10021_dates = champs_raw[!, :Id10021]
+# Count missing values
+id21_missing = count(ismissing, id10021_dates)
+# Remove missing values
+id21_dates = filter(x -> !ismissing(x), id10021_dates)
+
+# Calculate the minimum and maximum valid dates
+if !isempty(id21_dates)
+    min_date = minimum(id21_dates)
+    max_date = maximum(id21_dates)
+    println("Range of valid dates for Id10021: $min_date to $max_date")
+    println("Number of missing values: $id21_missing")
+else
+    println("No valid dates found.")
+end
+```
+
+#### Id10023: When did (s)he die?
+```julia
+# Extract the "Id10023" date column
+id10023_dates = champs_raw[!, :Id10023]
+# Count missing values
+id23_missing = count(ismissing, id10023_dates)
+# Remove missing values
+id23_dates = filter(x -> !ismissing(x), id10023_dates)
+
+# Calculate the minimum and maximum valid dates
+if !isempty(id23_dates)
+    min_date = minimum(id23_dates)
+    max_date = maximum(id23_dates)
+    println("Range of valid dates for Id10023: $min_date to $max_date")
+    println("Number of missing values: $id23_missing")
+else
+    println("No valid dates found.")
+end
+```
+
+Gotta make sure if it is the valid values
+
+### 5) Time variable - format issues 
 
 ```julia
-freqtable(champs_raw, :"Id10193")
+# Extract the "Id10011" column
+id10011_column = champs_raw[!, :Id10011]
+# Count the number of missing values
+id11_missing = count(ismissing, id10011_column)
+
+# Get non-missing values
+non_missing_values = id10011_column[.!ismissing.(id10011_column)]
+# Create a dictionary to store examples by length
+examples_by_length = Dict{Int, String}()
+
+# Iterate through non-missing values
+for value in non_missing_values
+    length_value = length(value)
+    if !haskey(examples_by_length, length_value)
+        examples_by_length[length_value] = value
+    end
+end
+
+# Print example values for different lengths
+println("Example values from Id10011:")
+for (length, example) in examples_by_length
+    println("Length $length: $example")
+end
 ```
-
-## Plot the frequency and impulse response
-
-
-The next code chunk is executed in term mode, see the [script](FIR_design.jl) for syntax.
-
-```julia; term=true
-h_db = log10.(abs.(h));
-ws = w/pi*(fs/2)
-```
+Totally does not make sense or how to clean it. 
