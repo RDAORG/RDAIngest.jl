@@ -1,6 +1,7 @@
 # Data quality check 
+# CHAMPS VA + Demographics datasets
 # Young 
-# Last Updated: Aug 23 2023
+# Last Updated: Aug 24 2023
 
 using ConfigEnv
 using DBInterface
@@ -12,6 +13,11 @@ using RDAIngest #just run the codes in RDAIngest.jl / rdadatabase.jl
 using Dates
 using Arrow
 using CSV
+using GR
+Pkg.add("PyPlot")
+using PyPlot          
+using Plots
+
 
 #Get environment variables #change the path in .env file
 dotenv()
@@ -24,38 +30,69 @@ DBInterface.execute(db, "SELECT * FROM value_types";) |> DataFrame
 DBInterface.execute(db, "SELECT * FROM datasets";) |> DataFrame
 
 ##############################################
-### STEP 0. Set up the [CHAMPS verbal autopsy] as dataframe -> dataset_id ==5
+### STEP 0. Set up the Merged dataset VA and Demographics
 ##############################################
 
+# A. Set up the [CHAMPS verbal autopsy] as dataframe -> dataset_id ==5
 # Query data for rows with dataset_id = 5
-data_query = """
+data_query1 = """
 SELECT row_id, variable_id, value
 FROM data
 WHERE row_id IN (SELECT row_id FROM datarows WHERE dataset_id = 5)
 """
-champs_data = DBInterface.execute(db, data_query)|>DataFrame
+champs_data1 = DBInterface.execute(db, data_query1)|>DataFrame
 
 # Query variables for variable information
-variables_query = """
+variables_query1 = """
 SELECT variable_id, name, value_type_id
 FROM variables
 WHERE variable_id IN (SELECT DISTINCT variable_id FROM data WHERE row_id IN (SELECT row_id FROM datarows WHERE dataset_id = 5))
 """
-champs_vars = DBInterface.execute(db, variables_query)|> DataFrame
+champs_vars1 = DBInterface.execute(db, variables_query1)|> DataFrame
 
-# Merge data_df with variables_df based on variable_id
-champs_df1 = innerjoin(champs_data, champs_vars, on = :variable_id)
+# Merge data_df with variables_df based on variable_id and make it to wide format
+champs_va = innerjoin(champs_data1, champs_vars1, on = :variable_id)
+champs_va2 = unstack(champs_va, :row_id,  :name, :value)
+rename!(champs_va2, :row_id => :row_id_va, :age_group => :age_group_va) #rename overlapped variables
 
-# Long to Wide format based on unique row ID and variable name
-champs_df2 = unstack(champs_df1, :row_id,  :name, :value)
 
-names(champs_df2) # 457 variables 
+# B. Set up the [CHAMPS degmoraphics] as dataframe -> dataset_id ==3
+# Query data for rows with dataset_id = 3
+data_query2 = """
+SELECT row_id, variable_id, value
+FROM data
+WHERE row_id IN (SELECT row_id FROM datarows WHERE dataset_id = 3)
+"""
+champs_data2 = DBInterface.execute(db, data_query2)|>DataFrame
+
+# Query variables for variable information
+variables_query2 = """
+SELECT variable_id, name, value_type_id
+FROM variables
+WHERE variable_id IN (SELECT DISTINCT variable_id FROM data WHERE row_id IN (SELECT row_id FROM datarows WHERE dataset_id = 3))
+"""
+champs_vars2 = DBInterface.execute(db, variables_query2)|> DataFrame
+
+# Merge data_df with variables_df based on variable_id and make it to wide format
+champs_demo = innerjoin(champs_data2, champs_vars2, on = :variable_id)
+champs_demo2 = unstack(champs_demo, :row_id,  :name, :value)
+rename!(champs_demo2, :row_id => :row_id_demo, :age_group => :age_group_demo) #rename overlapped variables
+
+# A+B Merging two datasets
+# Merge data VA and Demographics
+champs_vd=outerjoin(champs_va2, champs_demo2, on = :champs_deid)
+
+
+
+# Wide format based on unique row ID and variable name
+
+names(champs_vd) # 492 variables 
 
 # Save the DataFrame to a CSV file to explore the dataframe
-CSV.write("champs_df2.csv", champs_df2)
+CSV.write("champs_vd.csv", champs_vd)
 
 # Check the unique values of each variable ()
-unique(champs_df2[!, "Id10359"])
+unique(champs_vd[!, "Id10359"])
 
 """# Problematic variables from 457 variables
 fix type: ["Id10024", "Id10248","Id10250","Id10262","Id10266","Id10352"] 
@@ -75,15 +112,19 @@ using Pkg
 using Dates
 "FreqTables" ∉ keys(Pkg.project().dependencies) && Pkg.add("FreqTables")
 "StatsBase" ∉ keys(Pkg.project().dependencies) && Pkg.add("StatsBase")
+"PyPlot" ∉ keys(Pkg.project().dependencies) && Pkg.add("PyPlot")
+"Plots" ∉ keys(Pkg.project().dependencies) && Pkg.add("Plots")
+using PyPlot          
+using Plots
 using FreqTables
 using StatsBase
-filename = "champs_df2"
+filename = "champs_vd"
 path = "/Users/young/Documents/GitHub/RDAIngest.jl/"
 file = joinpath(path, "$filename.csv")
 champs_raw = CSV.File(file; delim=',', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
 
 
-## 1. Describe the dataset 
+## 1. Dataset Overview
 
 ### 1) Data Size
 size(champs_raw)
@@ -106,7 +147,76 @@ for (col_type, count) in type_counts
     println("$col_type: $count variables")
 end
 
-## 2. Looking closely into each variable type
+
+
+## 2. Exploring Key Variables
+### 1) Cross-check the key variables between VA and demographics 
+#### a. Age group 
+# VA data
+freqtable(champs_raw, :"age_group_va")
+# Demographics data
+freqtable(champs_raw, :"age_group_demo")
+
+# age group in VA data does not seem complete / demographics seems ok 
+
+#### b. Date of Birth
+# VA data 
+
+# Create the "year_of_birth" variable (including missing) to check year distribution
+champs_raw.year_Id10021 = [ismissing(date) ? missing : year(date) for date in champs_raw.Id10021]
+freqtable(champs_raw, :"year_Id10021")
+
+# Missing patterns by sites (site_iso_code)
+freqtable(champs_raw, :"year_Id10021" , :"site_iso_code")
+
+# Demo data 
+
+# Create the "year_of_birth" variable (including missing) to check year distribution
+champs_raw.year_of_birth = [ismissing(date) ? missing : year(date) for date in champs_raw.date_of_birth]
+freqtable(champs_raw, :"year_of_birth")
+
+# Missing patterns by sites (site_iso_code)
+freqtable(champs_raw, :"year_of_birth" , :"site_iso_code")
+
+#### c. Date of Death
+# VA data 
+
+# Create the "year_of_death" variable (including missing) to check year distribution
+champs_raw.year_Id10023 = [ismissing(date) ? missing : year(date) for date in champs_raw.Id10023]
+freqtable(champs_raw, :"year_Id10023")
+
+# Missing patterns by sites (site_iso_code)
+freqtable(champs_raw, :"year_Id10023" , :"site_iso_code")
+
+# Demo data 
+
+# Create the "year_of_death" variable (including missing) to check year distribution
+champs_raw.year_of_death = [ismissing(date) ? missing : year(date) for date in champs_raw.date_of_death]
+freqtable(champs_raw, :"year_of_death")
+
+# Missing patterns by sites (site_iso_code)
+freqtable(champs_raw, :"year_of_death" , :"site_iso_code")
+
+#### d. Age days/months/years
+describe(champs_raw[!, :ageInDays])
+describe(champs_raw[!, :ageInMonths])
+describe(champs_raw[!, :ageInYears2])
+describe(champs_raw[!, :ageInYearsRemain])
+
+describe(champs_raw[!, :age_days])
+describe(champs_raw[!, :age_months])
+describe(champs_raw[!, :age_years])
+
+#### e. Sanity check for calculation of age in days
+
+# VA data
+champs_raw.ageindays_va_check = [ismissing(id21) || ismissing(id23) ? missing : Int(Dates.value(id23) - Dates.value(id21)) for (id21, id23) in zip(champs_raw.Id10021, champs_raw.Id10023)]
+describe(champs_raw[!, :ageindays_va_check]) # does't make sense 
+
+# Demo data
+champs_raw.ageindays_dm_check = [ismissing(id21) || ismissing(id23) ? missing : Int(Dates.value(id23) - Dates.value(id21)) for (id21, id23) in zip(champs_raw.date_of_birth, champs_raw.date_of_death)]
+describe(champs_raw[!, :ageindays_dm_check]) # hmm
+
 
 ### 1) Missing Variables 
 #### The list of variables only of missing value is here 
