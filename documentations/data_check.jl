@@ -227,6 +227,13 @@ for col_name in names(champs_raw)
     end
 end
 
+### 2) Mistmatched data types 
+#### a. Id10106:
+freqtable(champs_raw, :"Id10106")
+
+
+
+###########################################
 ### 2) Categorical Variables (String)
 #### eg 1. At any time during the final illness was there blood in the stools?
 freqtable(champs_raw, :"Id10186")
