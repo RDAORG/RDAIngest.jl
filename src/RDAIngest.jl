@@ -1107,17 +1107,21 @@ function dataset_to_arrow(db, dataset, datapath)
 end
 
 """
-    dataset_to_csv(db, dataset, datapath)
+    dataset_to_csv(db, dataset_id, datapath, compress)
 
 Save a dataset in compressed csv format
 """
-function dataset_to_csv(db, dataset, datapath)
+function dataset_to_csv(db, dataset_id, datapath, compress=false)
     outputdir = joinpath(datapath, "csvfiles")
     if !isdir(outputdir)
         mkpath(outputdir)
     end
-    df = dataset_to_dataframe(db, dataset)
-    CSV.write(joinpath(outputdir, "$(get_datasetname(db,dataset)).gz"), df, compress=true)
+    df = dataset_to_dataframe(db, dataset_id)
+    if (compress)
+        CSV.write(joinpath(outputdir, "$(get_datasetname(db,dataset_id)).gz"), df, compress=true) #have trouble opening on MacOS
+    else
+        CSV.write(joinpath(outputdir, "$(get_datasetname(db,dataset_id)).csv"), df)
+    end
 end
 
 """
