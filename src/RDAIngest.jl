@@ -186,6 +186,8 @@ function ingest_source(source::AbstractSource, dbpath::String, dbname::String,
                         datapath::String)
     db = opendatabase(dbpath, dbname)
     try
+        SQLite.transaction(db)
+
         source_id = add_source(source,db)
         
         # Add sites and country iso2 codes
@@ -200,6 +202,9 @@ function ingest_source(source::AbstractSource, dbpath::String, dbname::String,
         # Add Ethics
         add_ethics(source, db, datapath)
 
+        SQLite.commit(db)
+
+        return nothing
     finally
         close(db)
     end
@@ -217,6 +222,8 @@ function ingest_dictionary(dict::AbstractDictionary, dbpath::String, dbname::Str
     db = opendatabase(dbpath, dbname)
 
     try
+        SQLite.transaction(db)
+
         domain = add_domain(db, dict.domain_name, dict.domain_name)
 
         # Add variables
@@ -236,6 +243,8 @@ function ingest_dictionary(dict::AbstractDictionary, dbpath::String, dbname::Str
         
         ##=#
 
+        SQLite.commit(db)
+
         return nothing
     finally
         close(db)
@@ -254,29 +263,34 @@ function ingest_deaths(ingest::Ingest, dbpath::String, dbname::String, datapath:
     db = opendatabase(dbpath, dbname)
     
     try
-    source_id = get_source(db, ingest.source_name)
+        SQLite.transaction(db)
 
-    # Add ingestion and transformation info
-    ingestion_id = add_ingestion(db, source_id, today(), ingest.ingest_desc)
-    transformation_id = add_transformation(db, 1, 1, ingest.transform_desc, #type=1, status=1
-                                            ingest.code_reference, today(), ingest.author)
+        source_id = get_source(db, ingest.source_name)
 
-    # Ingest deaths
-    deaths = read_data(DocCSV(joinpath(datapath,ingest.source_name,ingest.datafolder),
-                          ingest.death_file,
-                          ingest.delim, ingest.quotechar, ingest.dateformat, ingest.decimal))
+        # Add ingestion and transformation info
+        ingestion_id = add_ingestion(db, source_id, today(), ingest.ingest_desc)
+        transformation_id = add_transformation(db, 1, 1, ingest.transform_desc, #type=1, status=1
+                                                ingest.code_reference, today(), ingest.author)
 
-    sites = DBInterface.execute(db, "SELECT * FROM sites WHERE source_id = $source_id") |> DataFrame
-    sitedeaths = innerjoin(transform!(deaths, Symbol(ingest.site_col) => :site_name), 
-                           sites, on=:site_name, matchmissing=:notequal)
-                           
-    savedataframe(db, select(sitedeaths, :site_id, Symbol(ingest.death_idcol) => :external_id, 
-                            [] => Returns(ingestion_id) => :data_ingestion_id, copycols=false), 
-                  "deaths")
+        # Ingest deaths
+        deaths = read_data(DocCSV(joinpath(datapath,ingest.source_name,ingest.datafolder),
+                            ingest.death_file,
+                            ingest.delim, ingest.quotechar, ingest.dateformat, ingest.decimal))
 
-    println("Death data $(ingest.death_file) ingested.")
-    return Dict("ingestion_id" => ingestion_id ,
-                "transformation_id" => transformation_id)
+        sites = DBInterface.execute(db, "SELECT * FROM sites WHERE source_id = $source_id") |> DataFrame
+        sitedeaths = innerjoin(transform!(deaths, Symbol(ingest.site_col) => :site_name), 
+                            sites, on=:site_name, matchmissing=:notequal)
+                            
+        savedataframe(db, select(sitedeaths, :site_id, Symbol(ingest.death_idcol) => :external_id, 
+                                [] => Returns(ingestion_id) => :data_ingestion_id, copycols=false), 
+                    "deaths")
+
+        println("Death data $(ingest.death_file) ingested.")
+
+        SQLite.commit(db)
+
+        return Dict("ingestion_id" => ingestion_id ,
+                    "transformation_id" => transformation_id)
 
     finally
         close(db)
