@@ -15,7 +15,7 @@ using XLSX
 export 
     Vocabulary, VocabularyItem,
     AbstractSource, CHAMPSSource, COMSASource, AbstractDictionary, Ingest,
-    ingest_source, ingest_dictionary, ingest_deaths, ingest_data,
+    ingest_source, ingest_dictionary, ingest_deaths, ingest_data, ingest_voc_CHAMPSMITS,
 
     add_source, get_source, get_namedkey, get_variable, 
     add_domain, get_domain, 
@@ -27,6 +27,8 @@ export
     add_data_column, lookup_variables, 
     read_data, dataset_to_dataframe, dataset_to_arrow, dataset_to_csv, get_datasetname,
     savedataframe,
+
+    add_datasets,add_datarows,
 
     createdatabase, opendatabase #, 
     #get_table, createsources, createprotocols, createtransformations,
@@ -713,6 +715,101 @@ function add_vocabulary(db::SQLite.DB, vocabulary::Vocabulary)
     return id
 end
 
+
+ 
+"""
+
+    ingest_voc_CHAMPSMITS(datapath::String, source::String, datafolder::String, tac_vocabulary::String, domain_id::Int64)
+
+This function ingets vocabulary for CHAMPS tac result 
+
+tac_vocabulary: CHAMPS_deid_tac_vocabulary.xlsx created from CHAMPS data description, 
+first sheet include pathogen and multi-gene result code, rest include assay pattern and corresponding pathogen result label.
+"""
+
+function ingest_voc_CHAMPSMITS(dbpath::String, dbname::String, datapath::String, source::String, datafolder::String, tac_vocabulary::String)
+
+    db = opendatabase(dbpath, dbname)    
+    domain_id = get_domain(db,source)
+
+    # Read MITS vocabulary xlsx 
+    file = joinpath(datapath,source,datafolder,tac_vocabulary)
+    xf = XLSX.readxlsx(file)
+
+    pathogencode = XLSX.readtable(file, XLSX.sheetnames(xf)[1])|> DataFrame
+
+    # Get vocabularies
+    sql = "SELECT vocabulary_id FROM vocabularies"
+    last_row_id = DataFrame(DBInterface.execute(db,sql)).vocabulary_id[end]
+    
+    tac_voc = select(pathogencode,
+                        [] => Returns((1:size(pathogencode,1)) .+ last_row_id) => :vocabulary_id,
+                        :Pathogen => :name,
+                        Symbol("Multi-target result code") => :description)
+
+    #SQLite.transaction(db)
+
+    # Add vocabulary ids to variables table    
+    for row in eachrow(tac_voc)
+        pathogen = string("_","$(row.name)")
+        sql = """
+                UPDATE variables
+                SET vocabulary_id = IFNULL(vocabulary_id, $(row.vocabulary_id))
+                WHERE name LIKE '%$(pathogen)%' AND domain_id = $domain_id;
+                """
+        DBInterface.execute(db, sql)
+    end
+
+    # Add vocabularies to vocabularies item
+    sql = """
+        INSERT INTO vocabularies (name, description)
+        VALUES ( @name, @desc)
+        """
+        stmt = DBInterface.prepare(db, sql)
+        for row in eachrow(tac_voc)
+            DBInterface.execute(stmt, (
+                                        name=row.name, desc=row.description))
+        end
+
+    #SQLite.commit(db)
+    
+    # Get vocabulary item, description reflects combined assay result
+    tac_voc_item = DataFrame(vocabulary_id=Int64[], value = Int64[],
+                            code=String[],description=String[])
+
+    for row1 in eachrow(pathogencode)
+        voc_id = tac_voc.vocabulary_id[tac_voc.name .==row1.Pathogen]
+        ptg_xf = XLSX.readtable(file, row1.Pathogen)|> DataFrame
+        value=0
+        for row2 in eachrow(ptg_xf)
+            desc = replace(join([join([names(row2)[i],row2[i]],":") for i in 1:(length(row2)-1)],";"), " " => "")
+            code = row2.Interpretation
+            
+            # If code is new, add new row, otherwise update existing description
+            if in(code, tac_voc_item.code[tac_voc_item.vocabulary_id .==voc_id])
+                desc_old = tac_voc_item.description[(tac_voc_item.vocabulary_id .==voc_id) .&& (tac_voc_item.code .==code)][1]
+                tac_voc_item.description[(tac_voc_item.vocabulary_id .==voc_id) .&& (tac_voc_item.code .==code)] .= join([desc_old,desc],"|")
+            else
+                value= value + 1
+                tac_voc_item = vcat(tac_voc_item, DataFrame(vocabulary_id=voc_id, value=value, code=code, description=desc))
+            end
+        end
+    end
+
+    # Add vocabulary items to vocabulary_items table
+    sql = """
+            INSERT INTO vocabulary_items (vocabulary_id, value, code, description)
+            VALUES (@vocabulary_id, @value, @code, @desc)
+            """
+            stmt = DBInterface.prepare(db, sql)
+            for row in eachrow(tac_voc_item)
+                DBInterface.execute(stmt, (vocabulary_id=row.vocabulary_id, 
+                                            value=row.value, code = row.code, desc=row.description))
+            end
+            
+    return nothing
+end
+
 """
 read_variables(dict::AbstractDictionary, dictionarypath::String, dictionaryname::String)
 
@@ -859,26 +956,19 @@ function import_datasets(db::SQLite.DB, datapath::String,
 
         variables = lookup_variables(db, names(data), domain_id)
         var_lookup = Dict{String,Int64}(zip(variables.name, variables.variable_id))
-        sql = """
-        INSERT INTO datasets(name, date_created, description) 
-        VALUES (@name, @date_created, @description);
-        """
-        stmt = DBInterface.prepare(db, sql)
-        dataset_id = DBInterface.lastrowid(DBInterface.execute(stmt, (name=filename, date_created=Dates.format(today(), "yyyy-mm-dd"), description=description)))
-
+        
+        # Add dataset entry to datasets table
+        dataset_id = add_datasets(db, filename, description)
+        
         add_dataset_ingestion(db, dataset_id, transformation_id, ingestion_id)
         add_transformation_output(db, dataset_id, transformation_id)
 
         savedataframe(db, select(variables, [] => Returns(dataset_id) => :dataset_id, :variable_id), "dataset_variables")
 
-        #store datarows
-        stmt = DBInterface.prepare(db, "INSERT INTO datarows (dataset_id) VALUES(@dataset_id);")
-        for i = 1:nrow(data)
-            DBInterface.execute(stmt, (dataset_id = dataset_id))
-        end
+        # Store datarows in datarows table and get row_ids 
+        datarows = add_datarows(db::SQLite.DB, nrow(data), dataset_id)
 
         #prepare data for storage
-        datarows = DBInterface.execute(db, "SELECT row_id FROM datarows WHERE dataset_id = $dataset_id;") |> DataFrame
         d = hcat(datarows, data, makeunique=true, copycols=false) #add the row_id to each row of data
         #store whole column at a time
         for col in propertynames(data)
@@ -1209,6 +1299,41 @@ function get_last_deathingest(db::SQLite.DB, source_name::String)
     else
         error("Death from source $source_name hasn't been ingested.")
     end
+end
+
+"""
+    add_datasets(db, new_dataset_name, new_dataset_description)
+
+Add dataset entry in the datasets table
+"""
+function add_datasets(db::SQLite.DB, dataset_name::String, dataset_description::String)
+    sql = """
+    INSERT INTO datasets(name, date_created, description) 
+    VALUES (@name, @date_created, @description);
+    """
+    stmt = DBInterface.prepare(db, sql)
+    dataset_id = DBInterface.lastrowid(DBInterface.execute(stmt, 
+                                            (name=dataset_name, 
+                                            date_created=Dates.format(today(), "yyyy-mm-dd"), 
+                                            description=dataset_description)))
+    println("Entry for dataset $dataset_name added in the datasets table") 
+    return dataset_id
+end
+
+"""
+    add_datarows(db, nrow)
+
+Define data rows in the datarows table
+"""
+function add_datarows(db::SQLite.DB, nrow::Int64, dataset_id::Int64)
+    stmt = DBInterface.prepare(db, "INSERT INTO datarows (dataset_id) VALUES(@dataset_id);")
+    for i = 1:nrow
+        DBInterface.execute(stmt, (dataset_id = dataset_id))
+    end
+
+    datarows = DBInterface.execute(db, "SELECT row_id FROM datarows WHERE dataset_id = $dataset_id;") |> DataFrame
+
+    return datarows
 end
 
 include("rdadatabase.jl")

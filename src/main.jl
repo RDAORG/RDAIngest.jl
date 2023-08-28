@@ -35,6 +35,12 @@ CHAMPSdict = AbstractDictionary(
 
 @time ingest_dictionary(CHAMPSdict, ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_DICTIONARY_PATH"])
 
+# For CHAMPS, add vocabularies for TAC results with multi-gene
+@time ingest_voc_CHAMPSMITS(ENV["RDA_DATABASE_PATH"], dbname, 
+                            ENV["DATA_INGEST_PATH"], "CHAMPS", "De_identified_data", 
+                            "CHAMPS_deid_tac_vocabulary.xlsx")
+                            
+
 # Step 3: Ingest deaths to deathrows, return transformation_id and ingestion_id
 CHAMPSIngest = Ingest(source_name = "CHAMPS",
                 datafolder = "De_identified_data",
