@@ -15,7 +15,8 @@ using XLSX
 export 
     Vocabulary, VocabularyItem,
     AbstractSource, CHAMPSSource, COMSASource, AbstractDictionary, Ingest,
-    ingest_source, ingest_dictionary, ingest_deaths, ingest_data, ingest_voc_CHAMPSMITS,
+    ingest_source, ingest_dictionary, ingest_deaths, ingest_data, 
+    ingest_voc_CHAMPSMITS,
 
     add_source, get_source, get_namedkey, get_variable, 
     add_domain, get_domain, 
@@ -23,12 +24,11 @@ export
     add_variables, add_vocabulary, read_variables, get_vocabulary,
     import_datasets, link_instruments, link_deathrows, death_in_ingest, dataset_in_ingest, 
     add_ingestion, add_transformation, add_dataset_ingestion, add_transformation_output,
-    
-    add_data_column, lookup_variables, 
+    add_data_column, lookup_variables, add_datasets, add_datarows,
+    get_last_deathingest,
+
     read_data, dataset_to_dataframe, dataset_to_arrow, dataset_to_csv, get_datasetname,
     savedataframe,
-
-    add_datasets,add_datarows,
 
     createdatabase, opendatabase #, 
     #get_table, createsources, createprotocols, createtransformations,
@@ -1335,6 +1335,7 @@ function add_datarows(db::SQLite.DB, nrow::Int64, dataset_id::Int64)
 
     return datarows
 end
+
 
 include("rdadatabase.jl")
 
