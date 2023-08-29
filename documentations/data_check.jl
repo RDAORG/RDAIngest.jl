@@ -164,6 +164,7 @@ freqtable(champs_raw, :"age_group_demo")
 
 # Create the "year_of_birth" variable (including missing) to check year distribution
 champs_raw.year_Id10021 = [ismissing(date) ? missing : year(date) for date in champs_raw.Id10021]
+# Distribution of year of birth
 freqtable(champs_raw, :"year_Id10021")
 
 # Missing patterns by sites (site_iso_code)
@@ -173,6 +174,7 @@ freqtable(champs_raw, :"year_Id10021" , :"site_iso_code")
 
 # Create the "year_of_birth" variable (including missing) to check year distribution
 champs_raw.year_of_birth = [ismissing(date) ? missing : year(date) for date in champs_raw.date_of_birth]
+# Distribution of year of birth 
 freqtable(champs_raw, :"year_of_birth")
 
 # Missing patterns by sites (site_iso_code)
@@ -183,6 +185,7 @@ freqtable(champs_raw, :"year_of_birth" , :"site_iso_code")
 
 # Create the "year_of_death" variable (including missing) to check year distribution
 champs_raw.year_Id10023 = [ismissing(date) ? missing : year(date) for date in champs_raw.Id10023]
+# Distribution of year of death
 freqtable(champs_raw, :"year_Id10023")
 
 # Missing patterns by sites (site_iso_code)
@@ -192,17 +195,20 @@ freqtable(champs_raw, :"year_Id10023" , :"site_iso_code")
 
 # Create the "year_of_death" variable (including missing) to check year distribution
 champs_raw.year_of_death = [ismissing(date) ? missing : year(date) for date in champs_raw.date_of_death]
+# Distribution of year of death
 freqtable(champs_raw, :"year_of_death")
 
 # Missing patterns by sites (site_iso_code)
 freqtable(champs_raw, :"year_of_death" , :"site_iso_code")
 
 #### d. Age days/months/years
+# VA data
 describe(champs_raw[!, :ageInDays])
 describe(champs_raw[!, :ageInMonths])
 describe(champs_raw[!, :ageInYears2])
 describe(champs_raw[!, :ageInYearsRemain])
 
+# Demo data
 describe(champs_raw[!, :age_days])
 describe(champs_raw[!, :age_months])
 describe(champs_raw[!, :age_years])
@@ -218,114 +224,105 @@ champs_raw.ageindays_dm_check = [ismissing(id21) || ismissing(id23) ? missing : 
 describe(champs_raw[!, :ageindays_dm_check]) # hmm
 
 
-### 1) Missing Variables 
-#### The list of variables only of missing value is here 
-println("Variables with type Missing:")
-for col_name in names(champs_raw)
-    if eltype(champs_raw[!, col_name]) == Missing
-        println(col_name)
-    end
-end
+
 
 ### 2) Mistmatched data types 
-#### a. Id10106:
+# VA data
+#### - Id10106: How many minutes after birth did the baby first cry?
 freqtable(champs_raw, :"Id10106")
+#### - Id10108: How many hours before death did the baby stop crying?
+freqtable(champs_raw, :"Id10108")
+
+#### - Id10024: Please indicate the year of death.
+freqtable(champs_raw, :"Id10024") 
+# Create the "year_of_death" variable (including missing) to check year distribution
+champs_raw.year_Id10024 = [ismissing(date) ? missing : year(date) for date in champs_raw.Id10024]
+# Distribution of year of death
+freqtable(champs_raw, :"year_Id10024")
+# so many missings on this and it is supposed to be year 
+
+#### - Id10162: For how many months did the difficulty breathing last?
+freqtable(champs_raw, :"Id10162")
+# How to assign months in numbers?
+
+#### - Id10248: For how many days did (s)he have puffiness of the face?
+freqtable(champs_raw, :"Id10248")
+
+#### - Id10250: How many days did the swelling last? Calculated as: if(${Id10250_units}='days', ${Id10250_a} div 30,${Id10250_b})
+freqtable(champs_raw, :"Id10250")
 
 
 
-###########################################
-### 2) Categorical Variables (String)
-#### eg 1. At any time during the final illness was there blood in the stools?
-freqtable(champs_raw, :"Id10186")
+### 3) Invalid measures or answers 
+# VA data
+#### -Id10059: What was her/his marital status?
+freqtable(champs_raw, :"Id10059")
 
-#### eg 2. What was her/his citizenship/nationality?
+#### -Id10213: For how many months did (s)he have mental confusion? Calculated as: if(${Id10213_units}='days', ${Id10213_a} div 30,${Id10213_b})
+freqtable(champs_raw, :"Id10213")
+
+#### -Id10178: How many minutes did the chest pain last?
+freqtable(champs_raw, :"Id10178")
+
+
+
+
+### 4) Inconsistent coding in answers 
+#### for most of the categorical variables - 
+
+#### - Id10004: Did s(he) die during the wet season? 
+freqtable(champs_raw, :"Id10004")
+# Need to extract the first word
+
+#### - Id10052: What was her/his citizenship/nationality?
 freqtable(champs_raw, :"Id10052")
+# Standardized underbar between more than one words
 
+#### - Id10077:  Did (s)he suffer from any injury or accident that led to her/his death? 
+freqtable(champs_raw, :"Id10077")
+# Many Y/N answers look like this 
 
-### 3) Numerical Variables (Integer/Float)
-
-##### Calculated ages have so many missing values. 
-describe(champs_raw[!, :ageInDays])
-describe(champs_raw[!, :ageInYears])
-describe(champs_raw[!, :ageInYears2])
-describe(champs_raw[!, :ageInYearsRemain])
-
-
-### 4) Date Variables
-### Validity issues with all the date variables 
-date_union_vars = []
-date_vars = []
-for col_name in names(champs_raw)
-    col_type = eltype(champs_raw[!, col_name])
-    if col_type == Union{Missing, Date}
-        push!(date_union_vars, col_name)
-    elseif col_type == Date
-        push!(date_vars, col_name)
+## List of Y/N variables 
+# Function to get column names with "yes" or "no" values
+function filter_yes_no_columns(df::DataFrame)
+    selected_cols = String[]
+    for col in names(df)
+        col_values = df[!, col]
+        has_yes_no_values = false
+        for val in col_values
+            if !ismissing(val) && (val == "yes" || val == "no")
+                has_yes_no_values = true
+                break
+            end
+        end
+        if has_yes_no_values
+            push!(selected_cols, col)
+        end
     end
+    return selected_cols
 end
 
-println("Variables of dates:")
-for var in append!(date_union_vars, date_vars)
-    println(var)
-end
+# Get column names with "yes" or "no" values
+yes_no_columns = filter_yes_no_columns(champs_raw)
 
-### Id10012: Date of interview
-# Extract the "Id10012" date column
-id10012_dates = champs_raw[!, :Id10012]
-# Count missing values
-id12_missing = count(ismissing, id10012_dates)
-# Remove missing values
-id12_dates = filter(x -> !ismissing(x), id10012_dates)
-
-# Calculate the minimum and maximum valid dates
-if !isempty(id12_dates)
-    min_date = minimum(id12_dates)
-    max_date = maximum(id12_dates)
-    println("Range of valid dates for Id10012: $min_date to $max_date")
-    println("Number of missing values: $id12_missing")
-else
-    println("No valid dates found.")
-end
-
-### Source data for Age Calculation //Calculated: (${Id10023} - ${Id10021})
-## Id10021: When was the deceased born?
-# Extract the "Id10021" date column
-id10021_dates = champs_raw[!, :Id10021]
-# Count missing values
-id21_missing = count(ismissing, id10021_dates)
-# Remove missing values
-id21_dates = filter(x -> !ismissing(x), id10021_dates)
-
-# Calculate the minimum and maximum valid dates
-if !isempty(id21_dates)
-    min_date = minimum(id21_dates)
-    max_date = maximum(id21_dates)
-    println("Range of valid dates for Id10021: $min_date to $max_date")
-    println("Number of missing values: $id21_missing")
-else
-    println("No valid dates found.")
-end
-
-## Id10023: When did (s)he die?
-# Extract the "Id10023" date column
-id10023_dates = champs_raw[!, :Id10023]
-# Count missing values
-id23_missing = count(ismissing, id10023_dates)
-# Remove missing values
-id23_dates = filter(x -> !ismissing(x), id10023_dates)
-
-# Calculate the minimum and maximum valid dates
-if !isempty(id23_dates)
-    min_date = minimum(id23_dates)
-    max_date = maximum(id23_dates)
-    println("Range of valid dates for Id10023: $min_date to $max_date")
-    println("Number of missing values: $id23_missing")
-else
-    println("No valid dates found.")
-end
+println(yes_no_columns)
+## 221 variables 
 
 
-### 5) Time variable - format issues 
+### 5) Uncertain missing value ranges
+
+#### - Id10148: How many days did the fever last?
+describe(champs_raw[!,:Id10148])
+freqtable(champs_raw, :"Id10148")
+
+describe(champs_raw[!,:Id10154])
+
+
+freqtable(champs_raw, :"Id10174")
+
+
+
+### 6) Formatting issues with time variables
 # Extract the "Id10011" column
 id10011_column = champs_raw[!, :Id10011]
 # Count the number of missing values
@@ -349,77 +346,5 @@ println("Example values from Id10011:")
 for (length, example) in examples_by_length
     println("Length $length: $example")
 end
-
-#############################################
-### STEP 2. Detect the missing data patterns
-#############################################
-
-# By region
-# Id10054: Place of Birth // no valid info on the geographic information
-freqtable(champs_raw, :"Id10054")
-
-# Just few info on the limited facility info
-# Id10058: Where did the deceased die?
-freqtable(champs_raw, :"Id10058")
-
-freqtable(champs_raw, :"Id10433")
-
-
-
-
-
-
-#############################################
-### STEP 3. CLEAN THE DATA (not processed yet)
-#############################################
-
-# 1. Every string variable should be in the lowercase.
-
-# Create a copy of the original DataFrame
-champs_df3 = copy(champs_df2)
-
-# Check the datatypes for each column
-for col_name in names(champs_df3)
-    col = champs_df3[!, col_name]
-    println("$col_name: $(eltype(col))")
-end
-
-# Loop through each column in the copy
-for col_name in names(champs_df3)
-    col = champs_df3[!, col_name]
-    col_type = eltype(col)
-    if col_type == Union{Missing, String}
-        champs_df3[!, col_name] .= map(x -> x isa Missing ? x : lowercase(x), col)
-    end
-end
-
-# Save the DataFrame to a CSV file to check the dataframe
-CSV.write("champs_df3.csv", champs_df3)
-
-## STEP 2: Make the "DK" mising data consistent
-using Statistics
-using Pkg
-#Pkg.add("FreqTables")
-using FreqTables
-
-# Check the frequency of each variable
-freqtable(champs_df3, :"Id10186")
-
-# Define a function to replace "doesn't know" and "does not know" with "dk"
-replace_dk(text) = ismissing(text) ? missing : (text == "doesn't know" || text == "does not know" ? "dk" : text)
-
-# Apply the replace_dk function to the entire DataFrame
-for col_name in names(champs_df3)
-    col = champs_df3[!, col_name]
-    if eltype(col) <: Union{Missing, String}
-        champs_df3[!, col_name] .= replace_dk.(col)
-    end
-end
-
-# Check again for sanity
-freqtable(champs_df3, :"Id10186")
-
-# Save the DataFrame to a CSV file to check the dataframe
-CSV.write("champs_df3.csv", champs_df3)
 
 
