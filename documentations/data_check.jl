@@ -150,6 +150,7 @@ end
 
 
 ## 2. Exploring Key Variables
+
 ### 1) Cross-check the key variables between VA and demographics 
 #### a. Age group 
 # VA data
@@ -223,16 +224,33 @@ describe(champs_raw[!, :ageindays_va_check]) # does't make sense
 champs_raw.ageindays_dm_check = [ismissing(id21) || ismissing(id23) ? missing : Int(Dates.value(id23) - Dates.value(id21)) for (id21, id23) in zip(champs_raw.date_of_birth, champs_raw.date_of_death)]
 describe(champs_raw[!, :ageindays_dm_check]) # hmm
 
+#### Other age-based generated variables 
+freqtable(champs_raw, :"isAdult")
+
+freqtable(champs_raw, :"isChild")
+
+freqtable(champs_raw, :"isNeonatal")
 
 
 
 ### 2) Mistmatched data types 
-# VA data
+# a). Need instructions for some coding for numeric values 
 #### - Id10106: How many minutes after birth did the baby first cry?
 freqtable(champs_raw, :"Id10106")
 #### - Id10108: How many hours before death did the baby stop crying?
 freqtable(champs_raw, :"Id10108")
 
+#### Other examples with same issues
+freqtable(champs_raw, :"Id10367")
+freqtable(champs_raw, :"Id10285")
+freqtable(champs_raw, :"Id10382")
+freqtable(champs_raw, :"Id10394")
+freqtable(champs_raw, :"Id10162")
+freqtable(champs_raw, :"Id10202")
+
+# How to assign months in numbers?
+
+# b). Type different in year? date?
 #### - Id10024: Please indicate the year of death.
 freqtable(champs_raw, :"Id10024") 
 # Create the "year_of_death" variable (including missing) to check year distribution
@@ -241,34 +259,45 @@ champs_raw.year_Id10024 = [ismissing(date) ? missing : year(date) for date in ch
 freqtable(champs_raw, :"year_Id10024")
 # so many missings on this and it is supposed to be year 
 
-#### - Id10162: For how many months did the difficulty breathing last?
-freqtable(champs_raw, :"Id10162")
-# How to assign months in numbers?
+
+# c). How to assign the decimal points
 
 #### - Id10248: For how many days did (s)he have puffiness of the face?
 freqtable(champs_raw, :"Id10248")
 
-#### - Id10250: How many days did the swelling last? Calculated as: if(${Id10250_units}='days', ${Id10250_a} div 30,${Id10250_b})
+#### Other examples
 freqtable(champs_raw, :"Id10250")
-
+freqtable(champs_raw, :"Id10262")
+freqtable(champs_raw, :"Id10197")
 
 
 ### 3) Invalid measures or answers 
-# VA data
+
 #### -Id10059: What was her/his marital status?
 freqtable(champs_raw, :"Id10059")
 
 #### -Id10213: For how many months did (s)he have mental confusion? Calculated as: if(${Id10213_units}='days', ${Id10213_a} div 30,${Id10213_b})
+freqtable(champs_raw, :"Id10212") ## Did (s)he have mental confusion?
 freqtable(champs_raw, :"Id10213")
 
-#### -Id10178: How many minutes did the chest pain last?
+#### -Other examples with same issues
 freqtable(champs_raw, :"Id10178")
+freqtable(champs_raw, :"Id10303")
+freqtable(champs_raw, :"Id10309")
+freqtable(champs_raw, :"Id10332")
+freqtable(champs_raw, :"Id10415")
 
-
+#Loop missing -> 0 ?
 
 
 ### 4) Inconsistent coding in answers 
+
 #### for most of the categorical variables - 
+#### -Id10203: How rapidly did (s)he develop the protruding belly (abdomen)?
+freqtable(champs_raw, :"Id10203")
+# What is "ref" ref- same as dk? 
+
+# Unstandardized answers
 
 #### - Id10004: Did s(he) die during the wet season? 
 freqtable(champs_raw, :"Id10004")
@@ -276,7 +305,10 @@ freqtable(champs_raw, :"Id10004")
 
 #### - Id10052: What was her/his citizenship/nationality?
 freqtable(champs_raw, :"Id10052")
-# Standardized underbar between more than one words
+freqtable(champs_raw, :"Id10260")
+freqtable(champs_raw, :"Id10360")
+##Need underbar between more than one words 
+
 
 #### - Id10077:  Did (s)he suffer from any injury or accident that led to her/his death? 
 freqtable(champs_raw, :"Id10077")
@@ -315,14 +347,18 @@ println(yes_no_columns)
 describe(champs_raw[!,:Id10148])
 freqtable(champs_raw, :"Id10148")
 
-describe(champs_raw[!,:Id10154])
+#### - Id10201: For how many days did (s)he have a more than usually protruding belly (abdomen)?
+describe(champs_raw[!,:Id10201])
+freqtable(champs_raw, :"Id10201")
 
 
-freqtable(champs_raw, :"Id10174")
+### 6) More than two answers coding (how to code?)
+#### - Id10235: Where was the rash?
+freqtable(champs_raw, :"Id10235")
 
 
 
-### 6) Formatting issues with time variables
+### 7) Formatting issues with time variables
 # Extract the "Id10011" column
 id10011_column = champs_raw[!, :Id10011]
 # Count the number of missing values
