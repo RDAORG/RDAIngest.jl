@@ -110,7 +110,7 @@ freqtable(champs_raw, :"year_of_birth")
 # Missing patterns by sites (site_iso_code)
 freqtable(champs_raw, :"year_of_birth" , :"site_iso_code")
 ```
-The coding for the years 1899 and 1900 / beyond 2022 presents a significant area of inquiry that requires double-check. 
+The coding for the years 1899 and 1900 / beyond 2022 require double-check in VA data. 
 
 \
 
@@ -141,6 +141,8 @@ freqtable(champs_raw, :"year_of_death")
 freqtable(champs_raw, :"year_of_death" , :"site_iso_code")
 ```
 There are not any missing patterns across sites. Inquiry about how they coded the birth and death dates in the VA data.
+Basic Demographics data seems much valid on these information.
+
 \
 
 ##### d. Age days/months/years
@@ -190,7 +192,7 @@ freqtable(champs_raw, :"isNeonatal")
 ```
 Seemingly, no valid information on age-based generated variables in VA data.
 
-- A big question of whether the demographic information from the "basic_demographics" dataset is anticipated to align with that in the VA data? Furthermore, is it feasible to consider utilizing the demographic data for these key (age) variables? (still need detailed coding information, though.)
+- A big question of whether the demographic information from the "basic_demographics" dataset is anticipated to align with that in the VA data? Furthermore, is it feasible to consider utilizing the demographic data for these key (age) variables? (still need detailed coding information.)
 \
 
 
@@ -232,6 +234,7 @@ champs_raw.year_Id10024 = [ismissing(date) ? missing : year(date) for date in ch
 freqtable(champs_raw, :"year_Id10024")
 ```
 The variable "year of death" should ideally be coded as a year, but it seems to have been recorded as a full date. Similarly, there are numerous missing entries in the age variable, which should be represented in years.
+
 \
 
 ##### c. What to do with the decimal points
@@ -258,7 +261,7 @@ Additionally, do we address code "unknown" values as missing?
 ```julia
 freqtable(champs_raw, :"Id10059")
 ```
-Need to clarify the value "Child," and also confirm if it's a valid query or not.
+Need to clarify the value "Child," and also confirm if it's a valid question or not.
 
 - Id10212: Did (s)he have mental confusion?
 ```julia
@@ -415,5 +418,5 @@ Regarding the interpretation of tac multi-target codes, we should address the fo
 \
 \
 
-### Conclusion
-This data quality report offers a thorough understanding of the CHAMPS VA dataset's attributes and potential challenges. To proceed, clarification is needed on certain aspects, along with more detailed documentation of the coding process. This report lays the groundwork for subsequent data refinement and analysis, with the resolution of these quality concerns being pivotal for attaining precise and dependable results.
+### **Conclusion**
+This data quality report offers a thorough understanding of the CHAMPS VA dataset's attributes and potential challenges. To proceed, clarification is needed on certain aspects, along with more detailed documentation of the coding process. This report lays the groundwork for subsequent data cleaning and analysis, with the resolution of these quality concerns being pivotal for attaining precise and dependable results.
