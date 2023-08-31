@@ -1,13 +1,13 @@
 <!--
 title : CHAMPS Verbal Autopsy Data Quality Check [Part 1]
 author : Young
-date: Aug 23 2023
+date: Aug 31 2023
 -->
 
 # **CHAMPS Verbal Autopsy Data Quality Assessment Report**
 ###### **Yoonyoung Choi**
 ###### **Institute of Population Research, The Ohio State University**
-###### **Aug 23 2023**
+###### **Aug 31 2023**
 
 \
 \
@@ -64,164 +64,281 @@ end
 \
 \
 
-### Exploring Variable Types
+### Exploring Key Variables
 
-#### 1) Missing Variables 
-There are 89 variables that consist solely of missing values. Further investigation is needed to determine if these variables are as expected. 
+#### 1) Cross-check the key variables between VA and demographics data
 
-The list of variables with only missing values is as follows:
-```julia ; echo=false
-println("Variables with type Missing:")
-for col_name in names(champs_raw)
-    if eltype(champs_raw[!, col_name]) == Missing
-        println(col_name)
-    end
-end
+##### a. Age group
+- VA data
+```julia
+freqtable(champs_raw, :"age_group_va")
 ```
+
+- Demographics data
+```julia
+freqtable(champs_raw, :"age_group_demo")
+```
+Age group in VA data do not match to demographics and does not seem complete.
 
 \
 
-##### 2) Categorical Variables (String)
-- *Inconsistencies thoughout the categorical variables*
+##### b. Date of Birth
 
-Categorical variables are primarily represented as strings. Some inconsistencies exist in the value types for each category, including mixed upper/lower case and "don't know" answers. 
+- VA data 
 
-Examples include:
-
-
-- **Id10186**: At any time during the final illness was there blood in the stools?
 ```julia; echo=false
-freqtable(champs_raw, :"Id10186")
+# Create the "year_of_birth" variable (including missing) to check year distribution
+champs_raw.year_Id10021 = [ismissing(date) ? missing : year(date) for date in champs_raw.Id10021]
+# Distribution of year of birth
+freqtable(champs_raw, :"year_Id10021")
+
+# Missing patterns by sites (site_iso_code)
+freqtable(champs_raw, :"year_Id10021" , :"site_iso_code")
 ```
 
-- **Id10052**: What was her/his citizenship/nationality?
+- Demo data 
 ```julia; echo=false
-freqtable(champs_raw, :"Id10052")
-```
-Addressing these irregularities is a straightforward task, involving a simple conversion to lowercase and a uniform adjustment of responses like 'doesn't know' and 'does not know' to the universally recognized abbreviation 'dk'. Additionally, enhancing consistency through the introduction of underscores for spaces between words can further refine the data quality.
+# Create the "year_of_birth" variable (including missing) to check year distribution
+champs_raw.year_of_birth = [ismissing(date) ? missing : year(date) for date in champs_raw.date_of_birth]
+# Distribution of year of birth 
+freqtable(champs_raw, :"year_of_birth")
 
+# Missing patterns by sites (site_iso_code)
+freqtable(champs_raw, :"year_of_birth" , :"site_iso_code")
+```
 \
 
-##### 3) Numerical Variables (Integer/Float)
-- *Calculating issues and data quality issues for Ages*
+##### c. Date of Death
+- VA data 
+```julia; echo=false
+# Create the "year_of_death" variable (including missing) to check year distribution
+champs_raw.year_Id10023 = [ismissing(date) ? missing : year(date) for date in champs_raw.Id10023]
+# Distribution of year of death
+freqtable(champs_raw, :"year_Id10023")
 
-Numerical variables, such as calculated ages, have a significant number of missing values.
+# Missing patterns by sites (site_iso_code)
+freqtable(champs_raw, :"year_Id10023" , :"site_iso_code")
+```
 
-Examples include:
-- **ageInDays**: Calculated: (${Id10023} - ${Id10021})
+- Demo data 
+```julia; echo=false
+# Create the "year_of_death" variable (including missing) to check year distribution
+champs_raw.year_of_death = [ismissing(date) ? missing : year(date) for date in champs_raw.date_of_death]
+# Distribution of year of death
+freqtable(champs_raw, :"year_of_death")
+
+# Missing patterns by sites (site_iso_code)
+freqtable(champs_raw, :"year_of_death" , :"site_iso_code")
+```
+\
+
+##### d. Age days/months/years
+- VA data
 ```julia
 describe(champs_raw[!, :ageInDays])
-```
-- **ageInYears**: Calculated: int(${ageInDays} div 365.25)
-```julia
-describe(champs_raw[!, :ageInYears])
-```
-- **ageInYears2**: Calculated: int(${ageInMonthsByYear} div 12)
-```julia
+describe(champs_raw[!, :ageInMonths])
 describe(champs_raw[!, :ageInYears2])
-```
-- **ageInYearsRemain**: Calculated: ${ageInDays} mod 365.25
-```julia
 describe(champs_raw[!, :ageInYearsRemain])
 ```
-The range of *ageInYearsRemain* variable lacks logical coherence and warrants further examination.
-
+- Demo data
+```julia
+describe(champs_raw[!, :age_days])
+describe(champs_raw[!, :age_months])
+describe(champs_raw[!, :age_years])
+```
 \
 
-#### 4) Date Variables
-- *Validity issues with all the date variables* 
+##### e. Sanity check for calculation of age in days
 
-\
-
-List of date variables
+- VA data
 ```julia; echo=false
-date_union_vars = []
-date_vars = []
-for col_name in names(champs_raw)
-    col_type = eltype(champs_raw[!, col_name])
-    if col_type == Union{Missing, Date}
-        push!(date_union_vars, col_name)
-    elseif col_type == Date
-        push!(date_vars, col_name)
-    end
-end
-
-println("Variables of dates:")
-for var in append!(date_union_vars, date_vars)
-    println(var)
-end
-```
-Examples include:
-- **Id10012: Date of interview**
-```julia ; echo=false
-# Extract the "Id10012" date column
-id10012_dates = champs_raw[!, :Id10012]
-# Count missing values
-id12_missing = count(ismissing, id10012_dates)
-# Remove missing values
-id12_dates = filter(x -> !ismissing(x), id10012_dates)
-
-# Calculate the minimum and maximum valid dates
-if !isempty(id12_dates)
-    min_date = minimum(id12_dates)
-    max_date = maximum(id12_dates)
-    println("Range of valid dates for Id10012: $min_date to $max_date")
-    println("Number of missing values: $id12_missing")
-else
-    println("No valid dates found.")
-end
+champs_raw.ageindays_va_check = [ismissing(id21) || ismissing(id23) ? missing : Int(Dates.value(id23) - Dates.value(id21)) for (id21, id23) in zip(champs_raw.Id10021, champs_raw.Id10023)]
+describe(champs_raw[!, :ageindays_va_check]) # does't make sense 
 ```
 
-Source data for *ageInDays* Calculation : (${Id10023} - ${Id10021})
-
-- **Id10021: Date of Birth**
-```julia ; echo=false
-# Extract the "Id10021" date column
-id10021_dates = champs_raw[!, :Id10021]
-# Count missing values
-id21_missing = count(ismissing, id10021_dates)
-# Remove missing values
-id21_dates = filter(x -> !ismissing(x), id10021_dates)
-
-# Calculate the minimum and maximum valid dates
-if !isempty(id21_dates)
-    min_date = minimum(id21_dates)
-    max_date = maximum(id21_dates)
-    println("Range of valid dates for Id10021: $min_date to $max_date")
-    println("Number of missing values: $id21_missing")
-else
-    println("No valid dates found.")
-end
+- Demo data
+```julia; echo=false
+champs_raw.ageindays_dm_check = [ismissing(id21) || ismissing(id23) ? missing : Int(Dates.value(id23) - Dates.value(id21)) for (id21, id23) in zip(champs_raw.date_of_birth, champs_raw.date_of_death)]
+describe(champs_raw[!, :ageindays_dm_check]) # hmm
 ```
+\
 
-- **Id10023: Date of Death**
-```julia ; echo=false
-# Extract the "Id10023" date column
-id10023_dates = champs_raw[!, :Id10023]
-# Count missing values
-id23_missing = count(ismissing, id10023_dates)
-# Remove missing values
-id23_dates = filter(x -> !ismissing(x), id10023_dates)
+##### f. Other age-based generated variables 
 
-# Calculate the minimum and maximum valid dates
-if !isempty(id23_dates)
-    min_date = minimum(id23_dates)
-    max_date = maximum(id23_dates)
-    println("Range of valid dates for Id10023: $min_date to $max_date")
-    println("Number of missing values: $id23_missing")
-else
-    println("No valid dates found.")
-end
+- VA data
+```julia; echo=false
+freqtable(champs_raw, :"isAdult")
+
+freqtable(champs_raw, :"isChild")
+
+freqtable(champs_raw, :"isNeonatal")
 ```
+\
 
-Date variables exhibit validity issues that warrant further investigation. 
 
-The presence of dates before the early 1900s and beyond 2022 in the dataset seems unusual and requires closer scrutiny.
+#### 2) Mistmatched data types 
+
+##### a. Need coding instructions for numeric values 
+- Id10106: How many minutes after birth did the baby first cry?
+```julia
+freqtable(champs_raw, :"Id10106")
+```
+- Id10108: How many hours before death did the baby stop crying?
+```julia
+freqtable(champs_raw, :"Id10108")
+```
+- Other examples with same issues
+```julia; echo=false
+freqtable(champs_raw, :"Id10367")
+freqtable(champs_raw, :"Id10285")
+freqtable(champs_raw, :"Id10382")
+freqtable(champs_raw, :"Id10394")
+freqtable(champs_raw, :"Id10162")
+freqtable(champs_raw, :"Id10202")
+```
+How to assign months in numbers?
 
 \
 
-#### 5) Time variables 
-- *Inconsistent formatting issues* 
+##### b. Type different in year? date?
+
+- Id10024: Please indicate the year of death.
+```julia
+freqtable(champs_raw, :"Id10024") 
+# Create the "year_of_death" variable (including missing) to check year distribution
+champs_raw.year_Id10024 = [ismissing(date) ? missing : year(date) for date in champs_raw.Id10024]
+# Distribution of year of death
+freqtable(champs_raw, :"year_Id10024")
+```
+
+Similar issues with ages, so many missings on this and it is supposed to be year 
+
+\
+
+##### c. How to assign the decimal points
+
+- Id10248: For how many days did (s)he have puffiness of the face?
+```julia
+freqtable(champs_raw, :"Id10248")
+```
+
+- Other examples with same issues
+```julia
+freqtable(champs_raw, :"Id10250")
+freqtable(champs_raw, :"Id10262")
+freqtable(champs_raw, :"Id10197")
+```
+
+\
+
+#### 3) Invalid measures or answers 
+
+- Id10059: What was her/his marital status?
+```julia
+freqtable(champs_raw, :"Id10059")
+```
+
+- Id10213: For how many months did (s)he have mental confusion? Calculated as: if(${Id10213_units}='days', ${Id10213_a} div 30,${Id10213_b})
+```julia
+freqtable(champs_raw, :"Id10212") ## Did (s)he have mental confusion?
+freqtable(champs_raw, :"Id10213")
+```
+
+- Other examples with same issues
+```julia
+freqtable(champs_raw, :"Id10178")
+freqtable(champs_raw, :"Id10303")
+freqtable(champs_raw, :"Id10309")
+freqtable(champs_raw, :"Id10332")
+freqtable(champs_raw, :"Id10415")
+```
+#Loop missing -> 0 ?
+
+\
+
+#### 4) Inconsistent coding in answers 
+
+##### a. Dk/Ref answers
+- Id10203: How rapidly did (s)he develop the protruding belly (abdomen)?
+```julia
+freqtable(champs_raw, :"Id10203")
+```
+What is "ref" ref- same as dk? 
+
+\
+
+##### b. Unstandardized answers
+
+- Id10004: Did s(he) die during the wet season? 
+```julia
+freqtable(champs_raw, :"Id10004")
+```
+Need to extract the first word
+
+- Id10052: What was her/his citizenship/nationality?
+```julia
+freqtable(champs_raw, :"Id10052")
+freqtable(champs_raw, :"Id10260")
+freqtable(champs_raw, :"Id10360")
+```
+Need underbar between more than one words 
+
+- Id10077:  Did (s)he suffer from any injury or accident that led to her/his death? 
+```julia
+freqtable(champs_raw, :"Id10077")
+```
+Many Y/N answers look like this 
+
+- List of Y/N variables needs to be addressed
+```julia; echo=false
+# Function to get column names with "yes" or "no" values
+function filter_yes_no_columns(df::DataFrame)
+    selected_cols = String[]
+    for col in names(df)
+        col_values = df[!, col]
+        has_yes_no_values = false
+        for val in col_values
+            if !ismissing(val) && (val == "yes" || val == "no")
+                has_yes_no_values = true
+                break
+            end
+        end
+        if has_yes_no_values
+            push!(selected_cols, col)
+        end
+    end
+    return selected_cols
+end
+
+# Get column names with "yes" or "no" values
+yes_no_columns = filter_yes_no_columns(champs_raw)
+
+println(yes_no_columns)
+## 221 variables 
+```
+
+#### 5) Uncertain missing value ranges
+
+- Id10148: How many days did the fever last?
+```julia
+describe(champs_raw[!,:Id10148])
+freqtable(champs_raw, :"Id10148")
+```
+- Id10201: For how many days did (s)he have a more than usually protruding belly (abdomen)?
+```julia
+describe(champs_raw[!,:Id10201])
+freqtable(champs_raw, :"Id10201")
+```
+999 (outlier) is the valid value or missing code?
+
+#### 6) More than two answers coding 
+- Id10235: Where was the rash?
+```julia
+freqtable(champs_raw, :"Id10235")
+```
+
+
+#### 7) Formatting issues with time variables
 
 Time variables demonstrate inconsistencies in format. The variable *Id10011* presents challenges with its format and content. 
 
