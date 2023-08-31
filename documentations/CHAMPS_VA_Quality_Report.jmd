@@ -110,7 +110,7 @@ freqtable(champs_raw, :"year_of_birth")
 # Missing patterns by sites (site_iso_code)
 freqtable(champs_raw, :"year_of_birth" , :"site_iso_code")
 ```
-The coding for the years 1899 and 1900 / beyond 2022 require double-check in VA data. 
+Need to double-check the coding for the years 1899, 1900, and those beyond 2022 in the VA data.
 
 \
 
@@ -174,7 +174,7 @@ describe(champs_raw[!, :ageindays_va_check]) # does't make sense
 champs_raw.ageindays_dm_check = [ismissing(id21) || ismissing(id23) ? missing : Int(Dates.value(id23) - Dates.value(id21)) for (id21, id23) in zip(champs_raw.date_of_birth, champs_raw.date_of_death)]
 describe(champs_raw[!, :ageindays_dm_check]) # hmm
 ```
-When we calculate the difference between the date of death and the date of birth using a simple formula, it doesn't align with the information in the VA data. This is also causing discrepancies when compared to the demographics data. It's important to understand how they handle missing age values and perform these calculations accurately.
+When I calculate ages with the difference between the date of death and the date of birth using a simple formula, it doesn't align with the information in the VA data. This is also causing discrepancies when compared to the demographics data. It's important to understand how they handle missing age values and perform these calculations accurately.
 
 \
 
@@ -196,7 +196,7 @@ Seemingly, no valid information on age-based generated variables in VA data.
 \
 
 
-#### 2) Mistmatched data types 
+#### 2) Mis-matched data types 
 
 ##### a. Need coding instructions for some numeric type of variables
 - Id10106: How many minutes after birth did the baby first cry?
@@ -233,7 +233,7 @@ champs_raw.year_Id10024 = [ismissing(date) ? missing : year(date) for date in ch
 # Distribution of year of death
 freqtable(champs_raw, :"year_Id10024")
 ```
-The variable "year of death" should ideally be coded as a year, but it seems to have been recorded as a full date. Similarly, there are numerous missing entries in the age variable, which should be represented in years.
+The variable "year of death" should ideally be coded as a year, but it seems to have been recorded as a full date. Similarly, there are numerous missing entries.
 
 \
 
