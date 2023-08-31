@@ -28,8 +28,8 @@ using Dates
 using FreqTables
 using StatsBase
 ```
-```julia
-filename = "champs_df2"
+```julia; echo=false
+filename = "champs_vd"
 path = "/Users/young/Documents/GitHub/RDAIngest.jl/"
 file = joinpath(path, "$filename.csv")
 champs_raw = CSV.File(file; delim=',', quotechar='"', dateformat="yyyy-mm-dd", decimal='.') |> DataFrame
@@ -66,7 +66,7 @@ end
 
 ### Exploring Key Variables
 
-#### 1) Cross-check the key variables between VA and demographics data
+#### 1) Cross-check the key variables between VA and basic demographics data
 
 ##### a. Age group
 - VA data
@@ -166,11 +166,13 @@ describe(champs_raw[!, :ageindays_dm_check]) # hmm
 ##### f. Other age-based generated variables 
 
 - VA data
-```julia; echo=false
+```julia
 freqtable(champs_raw, :"isAdult")
-
+```
+```julia
 freqtable(champs_raw, :"isChild")
-
+```
+```julia
 freqtable(champs_raw, :"isNeonatal")
 ```
 \
@@ -188,7 +190,7 @@ freqtable(champs_raw, :"Id10106")
 freqtable(champs_raw, :"Id10108")
 ```
 - Other examples with same issues
-```julia; echo=false
+```julia
 freqtable(champs_raw, :"Id10367")
 freqtable(champs_raw, :"Id10285")
 freqtable(champs_raw, :"Id10382")
@@ -205,6 +207,8 @@ How to assign months in numbers?
 - Id10024: Please indicate the year of death.
 ```julia
 freqtable(champs_raw, :"Id10024") 
+```
+```julia
 # Create the "year_of_death" variable (including missing) to check year distribution
 champs_raw.year_Id10024 = [ismissing(date) ? missing : year(date) for date in champs_raw.Id10024]
 # Distribution of year of death
@@ -238,9 +242,13 @@ freqtable(champs_raw, :"Id10197")
 freqtable(champs_raw, :"Id10059")
 ```
 
+- Id10212: Did (s)he have mental confusion?
+```julia
+freqtable(champs_raw, :"Id10212")
+```
+
 - Id10213: For how many months did (s)he have mental confusion? Calculated as: if(${Id10213_units}='days', ${Id10213_a} div 30,${Id10213_b})
 ```julia
-freqtable(champs_raw, :"Id10212") ## Did (s)he have mental confusion?
 freqtable(champs_raw, :"Id10213")
 ```
 
@@ -287,7 +295,7 @@ Need underbar between more than one words
 ```julia
 freqtable(champs_raw, :"Id10077")
 ```
-Many Y/N answers look like this 
+Lower cases for strings - Many Y/N answers look like this 
 
 - List of Y/N variables needs to be addressed
 ```julia; echo=false
@@ -316,6 +324,7 @@ yes_no_columns = filter_yes_no_columns(champs_raw)
 println(yes_no_columns)
 ## 221 variables 
 ```
+\
 
 #### 5) Uncertain missing value ranges
 
@@ -331,12 +340,16 @@ freqtable(champs_raw, :"Id10201")
 ```
 999 (outlier) is the valid value or missing code?
 
+\
+
 #### 6) More than two answers coding 
 - Id10235: Where was the rash?
 ```julia
 freqtable(champs_raw, :"Id10235")
 ```
+How to code this?
 
+\
 
 #### 7) Formatting issues with time variables
 

@@ -662,13 +662,13 @@ div.title {text-align: center;}
 <!-- 
 title : CHAMPS Verbal Autopsy Data Quality Check [Part 1]
 author : Young
-date: Aug 23 2023
+date: Aug 31 2023
  -->
 
 <h1><strong>CHAMPS Verbal Autopsy Data Quality Assessment Report</strong></h1>
 <h6><strong>Yoonyoung Choi</strong></h6>
 <h6><strong>Institute of Population Research, The Ohio State University</strong></h6>
-<h6><strong>Aug 23 2023</strong></h6>
+<h6><strong>Aug 31 2023</strong></h6>
 <p><br /><br /> This report presents a data quality assessment of the dataset &quot;CHAMPS Deidentified Verbal Autopsy Results.&quot; The objective is to identify and discuss data quality issues that may impact further data processing and analysis. This document is created using <em>Julia markdown</em> and is based on the <strong>RDA database</strong>&#91;ver.Aug 2023&#93;.</p>
 <p><br /></p>
 
@@ -725,173 +725,99 @@ String: 1 variables
 
 
 <p><br /><br /></p>
-<h3>Exploring Variable Types</h3>
-<h4>1&#41; Missing Variables</h4>
-<p>There are 89 variables that consist solely of missing values. Further investigation is needed to determine if these variables are as expected. </p>
-<p>The list of variables with only missing values is as follows:</p>
-
-<pre class="output">
-Variables with type Missing:
-age_Child_InWeeks
-check_days
-check_month
-check_weeks
-displayAgeAdult
-displayAgeChild
-displayAgeNeonate
-form_end
-Id10007
-Id10010
-Id10017
-Id10018
-Id10054
-Id10055
-Id10056
-Id10057
-Id10060
-Id10061
-Id10062
-Id10070
-Id10072
-Id10073
-Id10132
-Id10138
-Id10139
-Id10140
-Id10141
-id10176_unit
-Id10212
-Id10228
-Id10237
-Id10254
-Id10294
-Id10295
-Id10296
-Id10297
-Id10298
-Id10299
-Id10300
-Id10301
-Id10302
-Id10304
-Id10305
-Id10306
-Id10307
-Id10308
-Id10310
-Id10312
-Id10313
-Id10314
-Id10315
-Id10316
-Id10317
-Id10318
-Id10320
-Id10321
-Id10322
-Id10323
-Id10324
-Id10325
-Id10326
-Id10327
-Id10328
-Id10329
-Id10330
-Id10331
-Id10333
-Id10334
-Id10335
-Id10336
-Id10337
-Id10338
-Id10339
-Id10340
-Id10342
-Id10343
-Id10344
-Id10411
-Id10412
-Id10413
-Id10414
-Id10434
-Id10440
-Id10441
-Id10444
-ill_age_Child_InMonths
-ill_ageInMonth
-ill_ageInMonth2
-ill_ageInMonth3
-</pre>
-
-
-<p><br /></p>
-<h5>2&#41; Categorical Variables &#40;String&#41;</h5>
+<h3>Exploring Key Variables</h3>
+<h4>1&#41; Cross-check the key variables between VA and demographics data</h4>
+<h5>a. Age group</h5>
 <ul>
-<li><p><em>Inconsistencies thoughout the categorical variables</em></p>
-</li>
-</ul>
-<p>Categorical variables are primarily represented as strings. Some inconsistencies exist in the value types for each category, including mixed upper/lower case and &quot;don&#39;t know&quot; answers. </p>
-<p>Examples include:</p>
-<ul>
-<li><p><strong>Id10186</strong>: At any time during the final illness was there blood in the stools?</p>
-</li>
-</ul>
-
-<pre class="output">
-10-element Named Vector&#123;Int64&#125;
-Id10186      │ 
-─────────────┼─────
-DK           │    4
-Doesn&#39;t know │    5
-NO           │  437
-No           │  168
-YES          │   14
-Yes          │    9
-dk           │   16
-no           │  900
-yes          │   22
-missing      │ 3242
-</pre>
-
-
-<ul>
-<li><p><strong>Id10052</strong>: What was her/his citizenship/nationality?</p>
-</li>
-</ul>
-
-<pre class="output">
-9-element Named Vector&#123;Int64&#125;
-Id10052             │ 
-────────────────────┼─────
-CITIZEN_AT_BIRTH    │  593
-Citizen at birth    │  192
-Foreign national    │    1
-Naturalized citizen │    4
-citizen_at_birth    │ 1919
-dk                  │    1
-foreign_national    │    5
-naturalized_citizen │   58
-missing             │ 2044
-</pre>
-
-
-<p>Addressing these irregularities is a straightforward task, involving a simple conversion to lowercase and a uniform adjustment of responses like &#39;doesn&#39;t know&#39; and &#39;does not know&#39; to the universally recognized abbreviation &#39;dk&#39;. Additionally, enhancing consistency through the introduction of underscores for spaces between words can further refine the data quality.</p>
-<p><br /></p>
-<h5>3&#41; Numerical Variables &#40;Integer/Float&#41;</h5>
-<ul>
-<li><p><em>Calculating issues and data quality issues for Ages</em></p>
-</li>
-</ul>
-<p>Numerical variables, such as calculated ages, have a significant number of missing values.</p>
-<p>Examples include:</p>
-<ul>
-<li><p><strong>ageInDays</strong>: Calculated: &#40;:&#40;&#123;Id10023&#125;&#41; - :&#40;&#123;Id10021&#125;&#41;&#41;</p>
+<li><p>VA data</p>
 </li>
 </ul>
 
 
 <pre class='hljl'>
-<span class='hljl-nf'>describe</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>[</span><span class='hljl-oB'>!</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-sc'>:ageInDays</span><span class='hljl-p'>])</span>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;age_group_va&quot;</span><span class='hljl-p'>)</span>
+</pre>
+
+
+<pre class="julia-error">
+ERROR: ArgumentError: column name :age_group_va not found in the data frame
+</pre>
+
+
+<ul>
+<li><p>Demographics data</p>
+</li>
+</ul>
+
+
+<pre class='hljl'>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;age_group_demo&quot;</span><span class='hljl-p'>)</span>
+</pre>
+
+
+<pre class="julia-error">
+ERROR: ArgumentError: column name :age_group_demo not found in the data frame
+</pre>
+
+
+<p>Age group in VA data do not match to demographics and does not seem complete.</p>
+<p><br /></p>
+<h5>b. Date of Birth</h5>
+<ul>
+<li><p>VA data </p>
+</li>
+</ul>
+
+<pre class="julia-error">
+ERROR: ArgumentError: column name :site_iso_code not found in the data frame
+</pre>
+
+
+<ul>
+<li><p>Demo data </p>
+</li>
+</ul>
+
+<pre class="julia-error">
+ERROR: ArgumentError: column name :date_of_birth not found in the data frame
+</pre>
+
+
+<p><br /></p>
+<h5>c. Date of Death</h5>
+<ul>
+<li><p>VA data </p>
+</li>
+</ul>
+
+<pre class="julia-error">
+ERROR: ArgumentError: column name :site_iso_code not found in the data frame
+</pre>
+
+
+<ul>
+<li><p>Demo data </p>
+</li>
+</ul>
+
+<pre class="julia-error">
+ERROR: ArgumentError: column name :date_of_death not found in the data frame
+</pre>
+
+
+<p><br /></p>
+<h5>d. Age days/months/years</h5>
+<ul>
+<li><p>VA data</p>
+</li>
+</ul>
+
+
+<pre class='hljl'>
+<span class='hljl-nf'>describe</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>[</span><span class='hljl-oB'>!</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-sc'>:ageInDays</span><span class='hljl-p'>])</span><span class='hljl-t'>
+</span><span class='hljl-nf'>describe</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>[</span><span class='hljl-oB'>!</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-sc'>:ageInMonths</span><span class='hljl-p'>])</span><span class='hljl-t'>
+</span><span class='hljl-nf'>describe</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>[</span><span class='hljl-oB'>!</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-sc'>:ageInYears2</span><span class='hljl-p'>])</span><span class='hljl-t'>
+</span><span class='hljl-nf'>describe</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>[</span><span class='hljl-oB'>!</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-sc'>:ageInYearsRemain</span><span class='hljl-p'>])</span>
 </pre>
 
 
@@ -906,46 +832,16 @@ Median:         1.000000
 3rd Quartile:   9.000000
 Maximum:        1681.000000
 Type:           Union&#123;Missing, Float64&#125;
-</pre>
-
-
-<ul>
-<li><p><strong>ageInYears</strong>: Calculated: int&#40;:&#40;&#123;ageInDays&#125;&#41; div 365.25&#41;</p>
-</li>
-</ul>
-
-
-<pre class='hljl'>
-<span class='hljl-nf'>describe</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>[</span><span class='hljl-oB'>!</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-sc'>:ageInYears</span><span class='hljl-p'>])</span>
-</pre>
-
-
-<pre class="output">
 Summary Stats:
 Length:         4817
 Missing Count:  4336
-Mean:           0.168399
+Mean:           0.902287
 Minimum:        0.000000
 1st Quartile:   0.000000
 Median:         0.000000
 3rd Quartile:   0.000000
-Maximum:        4.000000
+Maximum:        11.000000
 Type:           Union&#123;Missing, Float64&#125;
-</pre>
-
-
-<ul>
-<li><p><strong>ageInYears2</strong>: Calculated: int&#40;:&#40;&#123;ageInMonthsByYear&#125;&#41; div 12&#41;</p>
-</li>
-</ul>
-
-
-<pre class='hljl'>
-<span class='hljl-nf'>describe</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>[</span><span class='hljl-oB'>!</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-sc'>:ageInYears2</span><span class='hljl-p'>])</span>
-</pre>
-
-
-<pre class="output">
 Summary Stats:
 Length:         4817
 Missing Count:  4334
@@ -956,21 +852,6 @@ Median:         0.000000
 3rd Quartile:   0.000000
 Maximum:        4.000000
 Type:           Union&#123;Missing, Float64&#125;
-</pre>
-
-
-<ul>
-<li><p><strong>ageInYearsRemain</strong>: Calculated: :&#40;&#123;ageInDays&#125;&#41; mod 365.25</p>
-</li>
-</ul>
-
-
-<pre class='hljl'>
-<span class='hljl-nf'>describe</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>[</span><span class='hljl-oB'>!</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-sc'>:ageInYearsRemain</span><span class='hljl-p'>])</span>
-</pre>
-
-
-<pre class="output">
 Summary Stats:
 Length:         4817
 Missing Count:  4336
@@ -984,69 +865,646 @@ Type:           Union&#123;Missing, Float64&#125;
 </pre>
 
 
-<p>The range of <em>ageInYearsRemain</em> variable lacks logical coherence and warrants further examination.</p>
+<ul>
+<li><p>Demo data</p>
+</li>
+</ul>
+
+
+<pre class='hljl'>
+<span class='hljl-nf'>describe</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>[</span><span class='hljl-oB'>!</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-sc'>:age_days</span><span class='hljl-p'>])</span><span class='hljl-t'>
+</span><span class='hljl-nf'>describe</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>[</span><span class='hljl-oB'>!</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-sc'>:age_months</span><span class='hljl-p'>])</span><span class='hljl-t'>
+</span><span class='hljl-nf'>describe</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>[</span><span class='hljl-oB'>!</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-sc'>:age_years</span><span class='hljl-p'>])</span>
+</pre>
+
+
+<pre class="julia-error">
+ERROR: ArgumentError: column name &quot;age_days&quot; not found in the data frame; existing most similar names are: &quot;ageInDays&quot;
+</pre>
+
+
 <p><br /></p>
-<h4>4&#41; Date Variables</h4>
+<h5>e. Sanity check for calculation of age in days</h5>
 <ul>
-<li><p><em>Validity issues with all the date variables</em> </p>
-</li>
-</ul>
-<p><br /> List of date variables</p>
-
-<pre class="output">
-Variables of dates:
-Id10012
-Id10021
-Id10023
-Id10071
-Id10439
-Id10024
-</pre>
-
-
-<p>Examples include:</p>
-<ul>
-<li><p><strong>Id10012: Date of interview</strong></p>
+<li><p>VA data</p>
 </li>
 </ul>
 
 <pre class="output">
-Range of valid dates for Id10012: 1899-11-04 to 2029-08-18
-Number of missing values: 572
-</pre>
-
-
-<p>Source data for <em>ageInDays</em> Calculation : &#40;:&#40;&#123;Id10023&#125;&#41; - :&#40;&#123;Id10021&#125;&#41;&#41;</p>
-<ul>
-<li><p><strong>Id10021: Date of Birth</strong></p>
-</li>
-</ul>
-
-<pre class="output">
-Range of valid dates for Id10021: 1899-11-04 to 2025-08-04
-Number of missing values: 501
+Summary Stats:
+Length:         4817
+Missing Count:  602
+Mean:           2060.187426
+Minimum:        -44625.000000
+1st Quartile:   0.000000
+Median:         0.000000
+3rd Quartile:   98.000000
+Maximum:        47123.000000
+Type:           Union&#123;Missing, Int64&#125;
 </pre>
 
 
 <ul>
-<li><p><strong>Id10023: Date of Death</strong></p>
+<li><p>Demo data</p>
 </li>
 </ul>
 
-<pre class="output">
-Range of valid dates for Id10023: 1899-11-04 to 2029-08-18
-Number of missing values: 497
+<pre class="julia-error">
+ERROR: ArgumentError: column name :date_of_birth not found in the data frame
 </pre>
 
 
-<p>Date variables exhibit validity issues that warrant further investigation. </p>
-<p>The presence of dates before the early 1900s and beyond 2022 in the dataset seems unusual and requires closer scrutiny.</p>
 <p><br /></p>
-<h4>5&#41; Time variables</h4>
+<h5>f. Other age-based generated variables</h5>
 <ul>
-<li><p><em>Inconsistent formatting issues</em> </p>
+<li><p>VA data</p>
 </li>
 </ul>
+
+<pre class="output">
+3-element Named Vector&#123;Int64&#125;
+isNeonatal  │ 
+────────────┼─────
+0.0         │   91
+1.0         │  408
+missing     │ 4318
+</pre>
+
+
+<p><br /></p>
+<h4>2&#41; Mistmatched data types</h4>
+<h5>a. Need coding instructions for numeric values</h5>
+<ul>
+<li><p>Id10106: How many minutes after birth did the baby first cry?</p>
+</li>
+</ul>
+
+
+<pre class='hljl'>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10106&quot;</span><span class='hljl-p'>)</span>
+</pre>
+
+
+<pre class="output">
+43-element Named Vector&#123;Int64&#125;
+Id10106          │ 
+─────────────────┼─────
+ Does Not Know   │   17
+ Minutes         │    2
+0                │  335
+0 Minutes        │    3
+1                │  170
+1 Minutes        │    4
+10               │   48
+10 Minutes       │    2
+⋮                     ⋮
+88               │    6
+90               │    1
+98               │    1
+99               │  104
+Don&#39;t know       │    1
+Never            │    2
+Within 5 minutes │    1
+missing          │ 3727
+</pre>
+
+
+<ul>
+<li><p>Id10108: How many hours before death did the baby stop crying?</p>
+</li>
+</ul>
+
+
+<pre class='hljl'>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10108&quot;</span><span class='hljl-p'>)</span>
+</pre>
+
+
+<pre class="output">
+44-element Named Vector&#123;Int64&#125;
+Id10108        │ 
+───────────────┼─────
+ Does Not Know │    6
+ Hours         │    1
+0              │  197
+1              │   33
+1 Hours        │    1
+10             │    5
+11             │    1
+12             │    5
+⋮                   ⋮
+8              │    2
+9              │    2
+90             │    1
+95             │    1
+98             │    1
+99             │   53
+9999           │    1
+missing        │ 4394
+</pre>
+
+
+<ul>
+<li><p>Other examples with same issues</p>
+</li>
+</ul>
+
+<pre class="output">
+15-element Named Vector&#123;Int64&#125;
+Id10202  │ 
+─────────┼─────
+0        │  175
+1        │   20
+14       │    2
+2        │    8
+20       │    1
+3        │    5
+4        │    1
+41       │    1
+5        │    1
+6        │    2
+7        │    3
+8        │    1
+99       │    1
+Months   │    3
+missing  │ 4593
+</pre>
+
+
+<p>How to assign months in numbers?</p>
+<p><br /></p>
+<h5>b. Type different in year? date?</h5>
+<ul>
+<li><p>Id10024: Please indicate the year of death.</p>
+</li>
+</ul>
+
+
+<pre class='hljl'>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10024&quot;</span><span class='hljl-p'>)</span><span class='hljl-t'> 
+</span><span class='hljl-cs'># Create the &quot;year_of_death&quot; variable (including missing) to check year distribution</span><span class='hljl-t'>
+</span><span class='hljl-n'>champs_raw</span><span class='hljl-oB'>.</span><span class='hljl-n'>year_Id10024</span><span class='hljl-t'> </span><span class='hljl-oB'>=</span><span class='hljl-t'> </span><span class='hljl-p'>[</span><span class='hljl-nf'>ismissing</span><span class='hljl-p'>(</span><span class='hljl-n'>date</span><span class='hljl-p'>)</span><span class='hljl-t'> </span><span class='hljl-oB'>?</span><span class='hljl-t'> </span><span class='hljl-n'>missing</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-t'> </span><span class='hljl-nf'>year</span><span class='hljl-p'>(</span><span class='hljl-n'>date</span><span class='hljl-p'>)</span><span class='hljl-t'> </span><span class='hljl-k'>for</span><span class='hljl-t'> </span><span class='hljl-n'>date</span><span class='hljl-t'> </span><span class='hljl-kp'>in</span><span class='hljl-t'> </span><span class='hljl-n'>champs_raw</span><span class='hljl-oB'>.</span><span class='hljl-n'>Id10024</span><span class='hljl-p'>]</span><span class='hljl-t'>
+</span><span class='hljl-cs'># Distribution of year of death</span><span class='hljl-t'>
+</span><span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;year_Id10024&quot;</span><span class='hljl-p'>)</span>
+</pre>
+
+
+<pre class="output">
+7-element Named Vector&#123;Int64&#125;
+year_Id10024  │ 
+──────────────┼─────
+1899          │ 2442
+1900          │ 2360
+2018          │    5
+2019          │    3
+2020          │    3
+2021          │    2
+2022          │    2
+</pre>
+
+
+<p>Similar issues with ages, so many missings on this and it is supposed to be year </p>
+<p><br /></p>
+<h5>c. How to assign the decimal points</h5>
+<ul>
+<li><p>Id10248: For how many days did &#40;s&#41;he have puffiness of the face?</p>
+</li>
+</ul>
+
+
+<pre class='hljl'>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10248&quot;</span><span class='hljl-p'>)</span>
+</pre>
+
+
+<pre class="output">
+23-element Named Vector&#123;Int64&#125;
+Id10248   │ 
+──────────┼─────
+0.0       │  123
+0.0333333 │    3
+0.0666667 │    3
+0.133333  │    2
+0.233333  │    1
+0.233333  │    3
+0.333333  │    1
+0.5       │    1
+⋮              ⋮
+9.0       │    1
+13.0      │    1
+14.0      │    7
+28.0      │    1
+30.0      │    2
+60.0      │    2
+99.0      │    1
+missing   │ 4606
+</pre>
+
+
+<ul>
+<li><p>Other examples with same issues</p>
+</li>
+</ul>
+
+
+<pre class='hljl'>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10250&quot;</span><span class='hljl-p'>)</span><span class='hljl-t'>
+</span><span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10262&quot;</span><span class='hljl-p'>)</span><span class='hljl-t'>
+</span><span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10197&quot;</span><span class='hljl-p'>)</span>
+</pre>
+
+
+<pre class="output">
+16-element Named Vector&#123;Int64&#125;
+Id10197            │ 
+───────────────────┼─────
+ Unknown           │    2
+0                  │  118
+0.0416666666666667 │    2
+1                  │   18
+11                 │    1
+14                 │    2
+15                 │    1
+17                 │    1
+2                  │   20
+3                  │   12
+30                 │    2
+4                  │   10
+5                  │    3
+6                  │    2
+7                  │    4
+missing            │ 4619
+</pre>
+
+
+<p><br /></p>
+<h4>3&#41; Invalid measures or answers</h4>
+<ul>
+<li><p>Id10059: What was her/his marital status?</p>
+</li>
+</ul>
+
+
+<pre class='hljl'>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10059&quot;</span><span class='hljl-p'>)</span>
+</pre>
+
+
+<pre class="output">
+2-element Named Vector&#123;Int64&#125;
+Id10059  │ 
+─────────┼─────
+CHILD    │    6
+missing  │ 4811
+</pre>
+
+
+<ul>
+<li><p>Id10213: For how many months did &#40;s&#41;he have mental confusion? Calculated as: if&#40;<span class="math">${Id10213_units}='days', ${Id10213_a} div 30,$</span>&#123;Id10213_b&#125;&#41;</p>
+</li>
+</ul>
+
+
+<pre class='hljl'>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10212&quot;</span><span class='hljl-p'>)</span><span class='hljl-t'> </span><span class='hljl-cs'>## Did (s)he have mental confusion?</span><span class='hljl-t'>
+</span><span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10213&quot;</span><span class='hljl-p'>)</span>
+</pre>
+
+
+<pre class="output">
+2-element Named Vector&#123;Int64&#125;
+Id10213  │ 
+─────────┼─────
+0        │  115
+missing  │ 4702
+</pre>
+
+
+<ul>
+<li><p>Other examples with same issues</p>
+</li>
+</ul>
+
+
+<pre class='hljl'>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10178&quot;</span><span class='hljl-p'>)</span><span class='hljl-t'>
+</span><span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10303&quot;</span><span class='hljl-p'>)</span><span class='hljl-t'>
+</span><span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10309&quot;</span><span class='hljl-p'>)</span><span class='hljl-t'>
+</span><span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10332&quot;</span><span class='hljl-p'>)</span><span class='hljl-t'>
+</span><span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10415&quot;</span><span class='hljl-p'>)</span>
+</pre>
+
+
+<pre class="output">
+2-element Named Vector&#123;Int64&#125;
+Id10415  │ 
+─────────┼─────
+0        │  115
+missing  │ 4702
+</pre>
+
+
+<p>#Loop missing -&gt; 0 ?</p>
+<p><br /></p>
+<h4>4&#41; Inconsistent coding in answers</h4>
+<h5>a. Dk/Ref answers</h5>
+<ul>
+<li><p>Id10203: How rapidly did &#40;s&#41;he develop the protruding belly &#40;abdomen&#41;?</p>
+</li>
+</ul>
+
+
+<pre class='hljl'>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10203&quot;</span><span class='hljl-p'>)</span>
+</pre>
+
+
+<pre class="output">
+9-element Named Vector&#123;Int64&#125;
+Id10203      │ 
+─────────────┼─────
+Doesn&#39;t know │    2
+RAPIDLY      │   17
+REF          │    1
+Rapidly      │    1
+SLOWLY       │   18
+Slowly       │    2
+rapidly      │   69
+slowly       │   62
+missing      │ 4645
+</pre>
+
+
+<p>What is &quot;ref&quot; ref- same as dk? </p>
+<p><br /></p>
+<h5>b. Unstandardized answers</h5>
+<ul>
+<li><p>Id10004: Did s&#40;he&#41; die during the wet season? </p>
+</li>
+</ul>
+
+
+<pre class='hljl'>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10004&quot;</span><span class='hljl-p'>)</span>
+</pre>
+
+
+<pre class="output">
+10-element Named Vector&#123;Int64&#125;
+Id10004    │ 
+───────────┼─────
+DK         │   53
+DRY        │  303
+DRY SEASON │    4
+Dry        │   83
+WET        │  291
+WET SEASON │    3
+Wet        │  114
+dry        │ 2036
+wet        │ 1902
+missing    │   28
+</pre>
+
+
+<p>Need to extract the first word</p>
+<ul>
+<li><p>Id10052: What was her/his citizenship/nationality?</p>
+</li>
+</ul>
+
+
+<pre class='hljl'>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10052&quot;</span><span class='hljl-p'>)</span><span class='hljl-t'>
+</span><span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10260&quot;</span><span class='hljl-p'>)</span><span class='hljl-t'>
+</span><span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10360&quot;</span><span class='hljl-p'>)</span>
+</pre>
+
+
+<pre class="output">
+21-element Named Vector&#123;Int64&#125;
+Id10360                                   │ 
+──────────────────────────────────────────┼─────
+DK                                        │    6
+Government clinic/health center           │   11
+Government health post                    │   10
+Government hospital                       │   99
+HEALTH FACILITY                           │    1
+HOME                                      │   30
+HOSPITAL                                  │  411
+Home of the deceased                      │    2
+⋮                                              ⋮
+Other health facility                     │   13
+The mother&#39;s home                         │    6
+home                                      │  146
+hospital                                  │ 2533
+on_route_to_hospital_or_facility          │   35
+other                                     │    5
+other_health_facility                     │  283
+missing                                   │ 1060
+</pre>
+
+
+<p>Need underbar between more than one words </p>
+<ul>
+<li><p>Id10077:  Did &#40;s&#41;he suffer from any injury or accident that led to her/his death? </p>
+</li>
+</ul>
+
+
+<pre class='hljl'>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10077&quot;</span><span class='hljl-p'>)</span>
+</pre>
+
+
+<pre class="output">
+10-element Named Vector&#123;Int64&#125;
+Id10077      │ 
+─────────────┼─────
+DK           │    2
+Doesn&#39;t know │    2
+NO           │  455
+No           │  326
+YES          │    8
+Yes          │    3
+dk           │   33
+no           │ 2903
+yes          │   73
+missing      │ 1012
+</pre>
+
+
+<p>Many Y/N answers look like this </p>
+<ul>
+<li><p>List of Y/N variables needs to be addressed</p>
+</li>
+</ul>
+
+<pre class="output">
+&#91;&quot;Id10009&quot;, &quot;Id10013&quot;, &quot;Id10020&quot;, &quot;Id10022&quot;, &quot;Id10051&quot;, &quot;Id10064&quot;, &quot;Id10069
+&quot;, &quot;Id10077&quot;, &quot;Id10079&quot;, &quot;Id10082&quot;, &quot;Id10083&quot;, &quot;Id10084&quot;, &quot;Id10085&quot;, &quot;Id100
+86&quot;, &quot;Id10087&quot;, &quot;Id10089&quot;, &quot;Id10090&quot;, &quot;Id10091&quot;, &quot;Id10092&quot;, &quot;Id10093&quot;, &quot;Id1
+0094&quot;, &quot;Id10095&quot;, &quot;Id10096&quot;, &quot;Id10097&quot;, &quot;Id10098&quot;, &quot;Id10100&quot;, &quot;Id10104&quot;, &quot;I
+d10105&quot;, &quot;Id10107&quot;, &quot;Id10109&quot;, &quot;Id10110&quot;, &quot;Id10111&quot;, &quot;Id10112&quot;, &quot;Id10113&quot;, 
+&quot;Id10114&quot;, &quot;Id10115&quot;, &quot;Id10116&quot;, &quot;Id10123&quot;, &quot;Id10125&quot;, &quot;Id10126&quot;, &quot;Id10127&quot;
+, &quot;Id10128&quot;, &quot;Id10129&quot;, &quot;Id10130&quot;, &quot;Id10131&quot;, &quot;Id10133&quot;, &quot;Id10134&quot;, &quot;Id1013
+5&quot;, &quot;Id10136&quot;, &quot;Id10137&quot;, &quot;Id10142&quot;, &quot;Id10143&quot;, &quot;Id10144&quot;, &quot;Id10147&quot;, &quot;Id10
+149&quot;, &quot;Id10152&quot;, &quot;Id10153&quot;, &quot;Id10155&quot;, &quot;Id10156&quot;, &quot;Id10157&quot;, &quot;Id10158&quot;, &quot;Id
+10159&quot;, &quot;Id10166&quot;, &quot;Id10168&quot;, &quot;Id10172&quot;, &quot;Id10173&quot;, &quot;Id10174&quot;, &quot;Id10181&quot;, &quot;
+Id10185&quot;, &quot;Id10186&quot;, &quot;Id10187&quot;, &quot;Id10188&quot;, &quot;Id10189&quot;, &quot;Id10191&quot;, &quot;Id10192&quot;,
+ &quot;Id10193&quot;, &quot;Id10194&quot;, &quot;Id10195&quot;, &quot;Id10200&quot;, &quot;Id10204&quot;, &quot;Id10207&quot;, &quot;Id10208
+&quot;, &quot;Id10210&quot;, &quot;Id10214&quot;, &quot;Id10215&quot;, &quot;Id10217&quot;, &quot;Id10218&quot;, &quot;Id10219&quot;, &quot;Id102
+20&quot;, &quot;Id10222&quot;, &quot;Id10223&quot;, &quot;Id10224&quot;, &quot;Id10225&quot;, &quot;Id10226&quot;, &quot;Id10227&quot;, &quot;Id1
+0229&quot;, &quot;Id10230&quot;, &quot;Id10231&quot;, &quot;Id10233&quot;, &quot;Id10236&quot;, &quot;Id10238&quot;, &quot;Id10239&quot;, &quot;I
+d10240&quot;, &quot;Id10241&quot;, &quot;Id10242&quot;, &quot;Id10243&quot;, &quot;Id10244&quot;, &quot;Id10245&quot;, &quot;Id10246&quot;, 
+&quot;Id10247&quot;, &quot;Id10249&quot;, &quot;Id10251&quot;, &quot;Id10252&quot;, &quot;Id10253&quot;, &quot;Id10255&quot;, &quot;Id10256&quot;
+, &quot;Id10257&quot;, &quot;Id10258&quot;, &quot;Id10259&quot;, &quot;Id10261&quot;, &quot;Id10264&quot;, &quot;Id10265&quot;, &quot;Id1026
+7&quot;, &quot;Id10268&quot;, &quot;Id10269&quot;, &quot;Id10270&quot;, &quot;Id10271&quot;, &quot;Id10272&quot;, &quot;Id10273&quot;, &quot;Id10
+275&quot;, &quot;Id10276&quot;, &quot;Id10277&quot;, &quot;Id10278&quot;, &quot;Id10279&quot;, &quot;Id10281&quot;, &quot;Id10282&quot;, &quot;Id
+10283&quot;, &quot;Id10284&quot;, &quot;Id10286&quot;, &quot;Id10287&quot;, &quot;Id10288&quot;, &quot;Id10289&quot;, &quot;Id10290&quot;, &quot;
+Id10347&quot;, &quot;Id10354&quot;, &quot;Id10356&quot;, &quot;Id10361&quot;, &quot;Id10362&quot;, &quot;Id10363&quot;, &quot;Id10364&quot;,
+ &quot;Id10365&quot;, &quot;Id10368&quot;, &quot;Id10369&quot;, &quot;Id10370&quot;, &quot;Id10371&quot;, &quot;Id10372&quot;, &quot;Id10373
+&quot;, &quot;Id10376&quot;, &quot;Id10377&quot;, &quot;Id10383&quot;, &quot;Id10384&quot;, &quot;Id10387&quot;, &quot;Id10388&quot;, &quot;Id103
+89&quot;, &quot;Id10391&quot;, &quot;Id10393&quot;, &quot;Id10395&quot;, &quot;Id10396&quot;, &quot;Id10397&quot;, &quot;Id10398&quot;, &quot;Id1
+0399&quot;, &quot;Id10400&quot;, &quot;Id10401&quot;, &quot;Id10402&quot;, &quot;Id10403&quot;, &quot;Id10404&quot;, &quot;Id10405&quot;, &quot;I
+d10406&quot;, &quot;Id10408&quot;, &quot;Id10408_1&quot;, &quot;Id10418&quot;, &quot;Id10419&quot;, &quot;Id10420&quot;, &quot;Id10421&quot;
+, &quot;Id10422&quot;, &quot;Id10423&quot;, &quot;Id10424&quot;, &quot;Id10425&quot;, &quot;Id10426&quot;, &quot;Id10427&quot;, &quot;Id1042
+8&quot;, &quot;Id10429&quot;, &quot;Id10430&quot;, &quot;Id10432&quot;, &quot;Id10435&quot;, &quot;Id10437&quot;, &quot;Id10438&quot;, &quot;Id10
+445&quot;, &quot;Id10446&quot;, &quot;Id10450&quot;, &quot;Id10451&quot;, &quot;Id10452&quot;, &quot;Id10453&quot;, &quot;Id10454&quot;, &quot;Id
+10455&quot;, &quot;Id10456&quot;, &quot;Id10457&quot;, &quot;Id10458&quot;, &quot;Id10459&quot;, &quot;Id10462&quot;, &quot;Id10463&quot;&#93;
+</pre>
+
+
+<h4>5&#41; Uncertain missing value ranges</h4>
+<ul>
+<li><p>Id10148: How many days did the fever last?</p>
+</li>
+</ul>
+
+
+<pre class='hljl'>
+<span class='hljl-nf'>describe</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>[</span><span class='hljl-oB'>!</span><span class='hljl-p'>,</span><span class='hljl-oB'>:</span><span class='hljl-n'>Id10148</span><span class='hljl-p'>])</span><span class='hljl-t'>
+</span><span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10148&quot;</span><span class='hljl-p'>)</span>
+</pre>
+
+
+<pre class="output">
+Summary Stats:
+Length:         4817
+Missing Count:  4035
+Mean:           5.806905
+Minimum:        0.000000
+1st Quartile:   1.000000
+Median:         2.000000
+3rd Quartile:   4.000000
+Maximum:        999.000000
+Type:           Union&#123;Missing, Int64&#125;
+30-element Named Vector&#123;Int64&#125;
+Id10148  │ 
+─────────┼─────
+0        │  181
+1        │  145
+2        │  127
+3        │  109
+4        │   52
+5        │   26
+6        │   12
+7        │   59
+⋮             ⋮
+60       │    4
+65       │    1
+68       │    1
+90       │    5
+99       │    1
+180      │    1
+999      │    1
+missing  │ 4035
+</pre>
+
+
+<ul>
+<li><p>Id10201: For how many days did &#40;s&#41;he have a more than usually protruding belly &#40;abdomen&#41;?</p>
+</li>
+</ul>
+
+
+<pre class='hljl'>
+<span class='hljl-nf'>describe</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>[</span><span class='hljl-oB'>!</span><span class='hljl-p'>,</span><span class='hljl-oB'>:</span><span class='hljl-n'>Id10201</span><span class='hljl-p'>])</span><span class='hljl-t'>
+</span><span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10201&quot;</span><span class='hljl-p'>)</span>
+</pre>
+
+
+<pre class="output">
+Summary Stats:
+Length:         4817
+Missing Count:  4561
+Mean:           10.914062
+Minimum:        0.000000
+1st Quartile:   0.000000
+Median:         1.000000
+3rd Quartile:   3.000000
+Maximum:        999.000000
+Type:           Union&#123;Missing, Int64&#125;
+26-element Named Vector&#123;Int64&#125;
+Id10201  │ 
+─────────┼─────
+0        │  114
+1        │   36
+2        │   22
+3        │   21
+4        │    7
+5        │    9
+6        │    2
+7        │   13
+⋮             ⋮
+40       │    1
+60       │    2
+150      │    1
+180      │    1
+210      │    1
+352      │    1
+999      │    1
+missing  │ 4561
+</pre>
+
+
+<p>999 &#40;outlier&#41; is the valid value or missing code?</p>
+<h4>6&#41; More than two answers coding</h4>
+<ul>
+<li><p>Id10235: Where was the rash?</p>
+</li>
+</ul>
+
+
+<pre class='hljl'>
+<span class='hljl-nf'>freqtable</span><span class='hljl-p'>(</span><span class='hljl-n'>champs_raw</span><span class='hljl-p'>,</span><span class='hljl-t'> </span><span class='hljl-oB'>:</span><span class='hljl-s'>&quot;Id10235&quot;</span><span class='hljl-p'>)</span>
+</pre>
+
+
+<pre class="output">
+20-element Named Vector&#123;Int64&#125;
+Id10235                                      │ 
+─────────────────────────────────────────────┼─────
+                                             │  192
+EVERYWHERE                                   │    8
+EXTREMITIES                                  │    2
+Everywhere                                   │    2
+Extremities;Everywhere;Face;Trunk or abdomen │    1
+Extremities;Face;Trunk or abdomen;Everywhere │    1
+FACE                                         │    2
+FACE TRUNK EXTREMITIES EVERYWHERE            │    1
+⋮                                                 ⋮
+extremities                                  │    9
+face                                         │    6
+face trunk                                   │    1
+face trunk extremities                       │    1
+trunk                                        │    7
+trunk everywhere                             │    1
+trunk extremities                            │    1
+missing                                      │ 4560
+</pre>
+
+
+<h4>7&#41; Formatting issues with time variables</h4>
 <p>Time variables demonstrate inconsistencies in format. The variable <em>Id10011</em> presents challenges with its format and content. </p>
 <ul>
 <li><p>Examples from <strong>Id10011&#91;Time at start of interview&#93;</strong> for different lengths are as follows:</p>
@@ -1078,8 +1536,8 @@ Length 10: 2:38:00 PM
         <HR/>
         <div class="footer">
           <p>
-            Published from <a href="CHAMPS_VA_Quality_Check.jmd">CHAMPS_VA_Quality_Check.jmd</a>
-            using <a href="http://github.com/JunoLab/Weave.jl">Weave.jl</a> v0.10.12 on 2023-08-23.
+            Published from <a href="CHAMPS_VA_Quality_Report.jmd">CHAMPS_VA_Quality_Report.jmd</a>
+            using <a href="http://github.com/JunoLab/Weave.jl">Weave.jl</a> v0.10.12 on 2023-08-31.
           </p>
         </div>
       </div>
