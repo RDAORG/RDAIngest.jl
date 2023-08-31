@@ -17,7 +17,7 @@ This report presents a data quality assessment of the dataset "CHAMPS Deidentifi
 \
 
 <!-- NOT appeared this setup dependencies and datasetup -->
- ### Set up the dataset
+ ### **Set up the dataset**
 ```julia; echo=false; results="hidden"
 using CSV
 using DataFrames
@@ -37,7 +37,7 @@ champs_raw = CSV.File(file; delim=',', quotechar='"', dateformat="yyyy-mm-dd", d
 \
 \
 
-### Dataset overview
+### **Dataset overview**
 
 #### Data Size
 ```julia 
@@ -64,7 +64,7 @@ end
 \
 \
 
-### Exploring Key Variables
+### **Exploring Key Variables**
 
 #### 1) Cross-check the key variables between VA and basic demographics data
 
@@ -74,62 +74,73 @@ end
 freqtable(champs_raw, :"age_group_va")
 ```
 
-- Demographics data
+- Demo data
 ```julia
 freqtable(champs_raw, :"age_group_demo")
 ```
-Age group in VA data do not match to demographics and does not seem complete.
+
+The age groups within the VA data appear to be significantly off from the basic demographics data, which suggests a potential lack of comprehensiveness.
 
 \
 
 ##### b. Date of Birth
 
 - VA data 
-
+Distribution of year of birth
 ```julia; echo=false
 # Create the "year_of_birth" variable (including missing) to check year distribution
 champs_raw.year_Id10021 = [ismissing(date) ? missing : year(date) for date in champs_raw.Id10021]
 # Distribution of year of birth
 freqtable(champs_raw, :"year_Id10021")
-
+```
+```julia
 # Missing patterns by sites (site_iso_code)
 freqtable(champs_raw, :"year_Id10021" , :"site_iso_code")
 ```
 
 - Demo data 
+Distribution of year of birth
 ```julia; echo=false
 # Create the "year_of_birth" variable (including missing) to check year distribution
 champs_raw.year_of_birth = [ismissing(date) ? missing : year(date) for date in champs_raw.date_of_birth]
 # Distribution of year of birth 
 freqtable(champs_raw, :"year_of_birth")
-
+```
+```julia
 # Missing patterns by sites (site_iso_code)
 freqtable(champs_raw, :"year_of_birth" , :"site_iso_code")
 ```
+The coding for the years 1899 and 1900 / beyond 2022 presents a significant area of inquiry that requires double-check. 
+
 \
 
 ##### c. Date of Death
 - VA data 
+Distribution of year of death
 ```julia; echo=false
 # Create the "year_of_death" variable (including missing) to check year distribution
 champs_raw.year_Id10023 = [ismissing(date) ? missing : year(date) for date in champs_raw.Id10023]
 # Distribution of year of death
 freqtable(champs_raw, :"year_Id10023")
-
+```
+```julia
 # Missing patterns by sites (site_iso_code)
 freqtable(champs_raw, :"year_Id10023" , :"site_iso_code")
 ```
 
 - Demo data 
+Distribution of year of death
 ```julia; echo=false
 # Create the "year_of_death" variable (including missing) to check year distribution
 champs_raw.year_of_death = [ismissing(date) ? missing : year(date) for date in champs_raw.date_of_death]
 # Distribution of year of death
 freqtable(champs_raw, :"year_of_death")
-
+```
+```julia
 # Missing patterns by sites (site_iso_code)
 freqtable(champs_raw, :"year_of_death" , :"site_iso_code")
 ```
+There are not any missing patterns across sites. Inquiry about how they coded the birth and death dates in the VA data.
 \
 
 ##### d. Age days/months/years
@@ -161,6 +172,8 @@ describe(champs_raw[!, :ageindays_va_check]) # does't make sense
 champs_raw.ageindays_dm_check = [ismissing(id21) || ismissing(id23) ? missing : Int(Dates.value(id23) - Dates.value(id21)) for (id21, id23) in zip(champs_raw.date_of_birth, champs_raw.date_of_death)]
 describe(champs_raw[!, :ageindays_dm_check]) # hmm
 ```
+When we calculate the difference between the date of death and the date of birth using a simple formula, it doesn't align with the information in the VA data. This is also causing discrepancies when compared to the demographics data. It's important to understand how they handle missing age values and perform these calculations accurately.
+
 \
 
 ##### f. Other age-based generated variables 
@@ -175,12 +188,15 @@ freqtable(champs_raw, :"isChild")
 ```julia
 freqtable(champs_raw, :"isNeonatal")
 ```
+Seemingly, no valid information on age-based generated variables in VA data.
+
+- A big question of whether the demographic information from the "basic_demographics" dataset is anticipated to align with that in the VA data? Furthermore, is it feasible to consider utilizing the demographic data for these key (age) variables? (still need detailed coding information, though.)
 \
 
 
 #### 2) Mistmatched data types 
 
-##### a. Need coding instructions for numeric values 
+##### a. Need coding instructions for some numeric type of variables
 - Id10106: How many minutes after birth did the baby first cry?
 ```julia
 freqtable(champs_raw, :"Id10106")
@@ -198,11 +214,12 @@ freqtable(champs_raw, :"Id10394")
 freqtable(champs_raw, :"Id10162")
 freqtable(champs_raw, :"Id10202")
 ```
-How to assign months in numbers?
+
+How can we convert text or range values into numerical values? Additionally, should we consider 98, 99, and 9999 as missing values?
 
 \
 
-##### b. Type different in year? date?
+##### b. Different types in coding 
 
 - Id10024: Please indicate the year of death.
 ```julia
@@ -214,24 +231,24 @@ champs_raw.year_Id10024 = [ismissing(date) ? missing : year(date) for date in ch
 # Distribution of year of death
 freqtable(champs_raw, :"year_Id10024")
 ```
-
-Similar issues with ages, so many missings on this and it is supposed to be year 
-
+The variable "year of death" should ideally be coded as a year, but it seems to have been recorded as a full date. Similarly, there are numerous missing entries in the age variable, which should be represented in years.
 \
 
-##### c. How to assign the decimal points
+##### c. What to do with the decimal points
 
 - Id10248: For how many days did (s)he have puffiness of the face?
 ```julia
 freqtable(champs_raw, :"Id10248")
 ```
 
-- Other examples with same issues
+- Other examples with same issues (# of days variables)
 ```julia
+freqtable(champs_raw, :"Id10197")
 freqtable(champs_raw, :"Id10250")
 freqtable(champs_raw, :"Id10262")
-freqtable(champs_raw, :"Id10197")
 ```
+Is there a specific method for assigning decimal points when dealing with days, or is it a flexible matter based on calculation? 
+Additionally, do we address code "unknown" values as missing?
 
 \
 
@@ -241,6 +258,7 @@ freqtable(champs_raw, :"Id10197")
 ```julia
 freqtable(champs_raw, :"Id10059")
 ```
+Need to clarify the value "Child," and also confirm if it's a valid query or not.
 
 - Id10212: Did (s)he have mental confusion?
 ```julia
@@ -252,6 +270,8 @@ freqtable(champs_raw, :"Id10212")
 freqtable(champs_raw, :"Id10213")
 ```
 
+If the higher-level question (looping) is missing for these 0 values, how to address this?
+
 - Other examples with same issues
 ```julia
 freqtable(champs_raw, :"Id10178")
@@ -260,7 +280,6 @@ freqtable(champs_raw, :"Id10309")
 freqtable(champs_raw, :"Id10332")
 freqtable(champs_raw, :"Id10415")
 ```
-#Loop missing -> 0 ?
 
 \
 
@@ -271,7 +290,7 @@ freqtable(champs_raw, :"Id10415")
 ```julia
 freqtable(champs_raw, :"Id10203")
 ```
-What is "ref" ref- same as dk? 
+Does "ref" refer to the same concept as "dk" (don't know)?
 
 \
 
@@ -281,7 +300,7 @@ What is "ref" ref- same as dk?
 ```julia
 freqtable(champs_raw, :"Id10004")
 ```
-Need to extract the first word
+Need to extract the initial word for the sake of consistency.
 
 - Id10052: What was her/his citizenship/nationality?
 ```julia
@@ -289,15 +308,16 @@ freqtable(champs_raw, :"Id10052")
 freqtable(champs_raw, :"Id10260")
 freqtable(champs_raw, :"Id10360")
 ```
-Need underbar between more than one words 
+For multiple words, an underscore is required to be placed in between for proper formatting.
 
 - Id10077:  Did (s)he suffer from any injury or accident that led to her/his death? 
 ```julia
 freqtable(champs_raw, :"Id10077")
 ```
-Lower cases for strings - Many Y/N answers look like this 
+A common pattern observed is that many Yes/No answers are presented in mixed lower/upper cases.
+Need to lowercase letters for all the strings.
 
-- List of Y/N variables needs to be addressed
+- List of Y/N variables needs to be addressed (221 variables)
 ```julia; echo=false
 # Function to get column names with "yes" or "no" values
 function filter_yes_no_columns(df::DataFrame)
@@ -338,7 +358,7 @@ freqtable(champs_raw, :"Id10148")
 describe(champs_raw[!,:Id10201])
 freqtable(champs_raw, :"Id10201")
 ```
-999 (outlier) is the valid value or missing code?
+Is the value 999, which appears to be an outlier, considered a valid data entry or a code indicating missing information?
 
 \
 
@@ -347,13 +367,11 @@ freqtable(champs_raw, :"Id10201")
 ```julia
 freqtable(champs_raw, :"Id10235")
 ```
-How to code this?
+We should determine the approach for coding this situation.
 
 \
 
 #### 7) Formatting issues with time variables
-
-Time variables demonstrate inconsistencies in format. The variable *Id10011* presents challenges with its format and content. 
 
 - Examples from **Id10011[Time at start of interview]** for different lengths are as follows:
 ```julia ; echo=false
@@ -381,9 +399,19 @@ for (length, example) in examples_by_length
     println("Length $length: $example")
 end
 ```
+Time variables demonstrate inconsistencies in format. The variable *Id10011* presents challenges with its format and content. 
+
 \
 \
 
+
+### Additional Discussion Points
+
+Regarding the interpretation of tac multi-target codes, we should address the following questions:
+
+1. How are these codes generated?
+2. What distinguishes between codes that are considered invalid versus those that are categorized as indeterminate?
+3. If both lab and tac pertain exclusively to non-tissue specimens, could you clarify the location of results for tissue specimens?
+
 ### Conclusion
-This data quality report provides a comprehensive overview of the CHAMPS VA dataset's characteristics and potential issues. 
-It serves as a foundation for further data cleaning and analysis. Addressing these data quality concerns will be crucial to ensuring accurate and reliable results.
+This data quality report offers a thorough understanding of the CHAMPS VA dataset's attributes and potential challenges. To proceed, clarification is needed on certain aspects, along with more detailed documentation of the coding process. This report lays the groundwork for subsequent data refinement and analysis, with the resolution of these quality concerns being pivotal for attaining precise and dependable results.
