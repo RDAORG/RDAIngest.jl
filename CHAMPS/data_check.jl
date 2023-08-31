@@ -271,6 +271,7 @@ freqtable(champs_raw, :"Id10262")
 freqtable(champs_raw, :"Id10197")
 
 
+
 ### 3) Invalid measures or answers 
 
 #### -Id10059: What was her/his marital status?
@@ -292,12 +293,12 @@ freqtable(champs_raw, :"Id10415")
 
 ### 4) Inconsistent coding in answers 
 
-#### for most of the categorical variables - 
+####a. Dk/ Ref answers 
 #### -Id10203: How rapidly did (s)he develop the protruding belly (abdomen)?
 freqtable(champs_raw, :"Id10203")
 # What is "ref" ref- same as dk? 
 
-# Unstandardized answers
+####b. Unstandardized answers
 
 #### - Id10004: Did s(he) die during the wet season? 
 freqtable(champs_raw, :"Id10004")
@@ -308,7 +309,6 @@ freqtable(champs_raw, :"Id10052")
 freqtable(champs_raw, :"Id10260")
 freqtable(champs_raw, :"Id10360")
 ##Need underbar between more than one words 
-
 
 #### - Id10077:  Did (s)he suffer from any injury or accident that led to her/his death? 
 freqtable(champs_raw, :"Id10077")
