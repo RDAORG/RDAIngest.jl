@@ -1,6 +1,13 @@
 # Reference Death Archive (RDA)
 RDA project for users of Verbal Autopsy HDSS dataset. RDA is data archive system to automate the Verbal Autopsy data 
 
+Built in Julia codes, wich can be broadly used for VA uses. 
+
+This documentation is to describe the key sturctures of the data archive and key relationships. More detailed information for each modeule is described in.
+
+1. `RDA Ingest.jl`
+2. `RDA Clean.jl`
+3. `RDA Convert.jl`
 
 ## Multiple sources Death registered data
 
@@ -35,9 +42,14 @@ Protocols
 ### 6. Instruments
 
 ### 7. Deaths
+Core deaths register as 
+
 
 ### 8. Mapping 
+Mapping to CDC regiestration. synced to standardized variablle inter VA and insilicoVA
 
 ### 9. Transportations
+With the updates of datasets, and the 
 
 ## Conclusion
+With this documentation, serves the basic works, and developed more
