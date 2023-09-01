@@ -24,6 +24,7 @@ function createdatabase(path, name; replace=false)
     createdatasets(db)
     createinstruments(db)
     createdeaths(db)
+    createmapping(db) 
     close(db)
 end
 """
@@ -66,8 +67,8 @@ function createsources(db::SQLite.DB)
     sql = raw"""
     CREATE TABLE "sites" (
     "site_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    "name" TEXT NOT NULL,
-    "site_iso_code" TEXT NOT NULL,
+    "site_name" TEXT NOT NULL,
+    "country_iso2" TEXT NOT NULL,
     "source_id" INTEGER NOT NULL,
     CONSTRAINT "fk_sites_source_id" FOREIGN KEY ("source_id") REFERENCES "sources" ("source_id") ON DELETE CASCADE ON UPDATE NO ACTION
     );
@@ -77,7 +78,7 @@ function createsources(db::SQLite.DB)
     CREATE UNIQUE INDEX "i_source_name"
     ON "sites" (
     "source_id" ASC,
-    "name" ASC
+    "site_name" ASC
     );
     """
     DBInterface.execute(db, sql)
@@ -93,7 +94,8 @@ function createprotocols(db::SQLite.DB)
     "ethics_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "name" TEXT NOT NULL,
     "ethics_committee" TEXT NOT NULL,
-    "ethics_reference" TEXT NOT NULL
+    "ethics_reference" TEXT NOT NULL,
+    CONSTRAINT "fk_ethics_ethics_id" FOREIGN KEY ("ethics_id") REFERENCES "sources" ("source_id") ON DELETE CASCADE ON UPDATE NO ACTION
     );
     """
     DBInterface.execute(db, sql)
@@ -102,6 +104,7 @@ function createprotocols(db::SQLite.DB)
     "ethics_document_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "ethics_id" INTEGER NOT NULL,
     "name" TEXT NOT NULL,
+    "description" TEXT NOT NULL,
     "document" BLOB,
     CONSTRAINT "fk_ethics_documents_ethics_id" FOREIGN KEY ("ethics_id") REFERENCES "ethics" ("ethics_id") ON DELETE CASCADE ON UPDATE NO ACTION
     );
@@ -119,6 +122,7 @@ function createprotocols(db::SQLite.DB)
     CREATE TABLE "protocols" (
     "protocol_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "name" TEXT NOT NULL,
+    "description" TEXT NOT NULL,
     "ethics_id" INTEGER,
     CONSTRAINT "fk_protocols_ethics_id" FOREIGN KEY ("ethics_id") REFERENCES "ethics" ("ethics_id") ON DELETE NO ACTION ON UPDATE NO ACTION
     );
@@ -266,6 +270,7 @@ function createvariables(db)
     "vocabulary_id" INTEGER,
     "description" TEXT,
     "note" TEXT,
+    "key" TEXT,
     CONSTRAINT "fk_variables_domain_id" FOREIGN KEY ("domain_id") REFERENCES "domains"("domain_id") ON DELETE NO ACTION ON UPDATE NO ACTION,
     CONSTRAINT "fk_variables_value_type_id" FOREIGN KEY ("value_type_id") REFERENCES "value_types"("value_type_id") ON DELETE NO ACTION ON UPDATE NO ACTION,
     CONSTRAINT "fk_variables_vocabulary_id" FOREIGN KEY ("vocabulary_id") REFERENCES "vocabularies"("vocabulary_id") ON DELETE NO ACTION ON UPDATE NO ACTION
@@ -388,7 +393,8 @@ function createinstruments(db::SQLite.DB)
     sql = raw"""
     CREATE TABLE "instruments" (
     "instrument_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    "name" TEXT NOT NULL
+    "name" TEXT NOT NULL,
+    "description" TEXT NOT NULL
     );
     """
     DBInterface.execute(db, sql)
@@ -468,4 +474,53 @@ function createdeaths(db)
     );
     """
     DBInterface.execute(db, sql)
+end
+
+
+"""
+    createmapping(db)
+
+Create the table required for variable mapping. This table is used to map variables from one instrument to another. The table is created in the database provided as an argument.
+The variable mapping is based on the PyCrossVA approach.
+
+The relationship to the PyCrossVA configuration file columns:
+
+  * New Column Name = destination_id - the variable_id of the new column
+  * New Column Documentation = Stored in the variable table
+  * Source Column ID = from_id - the variable_id of the source variable
+  * Source Column Documentation = will be in the variables table
+  * Relationship = operator - the operator to be used to create the new variable
+  * Condition = operants - the operants to be used with the operator
+  * Prerequisite = prerequisite_id - the variable_id of the prerequisite variable
+
+"""
+function createmapping(db)
+    sql = raw"""
+        CREATE TABLE IF NOT EXISTS "variablemaps" (
+            "variablemap_id"	INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            "name"	TEXT NOT NULL,
+            "instrument_id"	INTEGER NULL,
+            "source_domain" TEXT NULL,
+            "destination_domain" TEXT NULL,
+            CONSTRAINT "fk_variablemaps_instruments" FOREIGN KEY("instrument_id") REFERENCES "instruments"("instrument_id")
+        );
+    """
+    DBInterface.execute(db, sql)
+    sql = raw"""
+    CREATE TABLE IF NOT EXISTS variablemappings (
+        variablemapping_id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        variablemap_id INTEGER NOT NULL,
+        destination_id INTEGER NOT NULL,
+        from_id INTEGER NULL,
+        operator TEXT NULL,
+        operants TEXT NULL,
+        prerequisite_id INTEGER NULL,
+        CONSTRAINT fk_variablemappings_variablemap_id FOREIGN KEY (variablemap_id) REFERENCES variablemaps (variablemap_id),
+        CONSTRAINT fk_variablemappings_destination_id FOREIGN KEY (destination_id) REFERENCES variables (variable_id),
+        CONSTRAINT fk_variablemappings_from_id FOREIGN KEY (from_id) REFERENCES variables (variable_id),
+        CONSTRAINT fk_variablemappings_prerequisite_id FOREIGN KEY (prerequisite_id) REFERENCES variables (variable_id)
+    );
+    """
+    DBInterface.execute(db, sql)
+
 end
