@@ -1,4 +1,3 @@
 {
-    "sqltools.useNodeRuntime": true,
-    "julia.environmentPath": "/Users/young/Documents/GitHub/RDAIngest.jl/documentations"
+    "sqltools.useNodeRuntime": true
 }
