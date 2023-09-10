@@ -102,8 +102,132 @@ Retrieve table `table` as a DataFrame from `db`
 """
 function get_table(db::DBInterface.Connection, table::String)::AbstractDataFrame
     sql = "SELECT * FROM $(table)"
-    df = DBInterface.execute(db, sql; iterate_rows=true) |> DataFrame
+    df = DBInterface.execute(db, sql) |> DataFrame
     return df
+end
+"""
+    makeparam(s)
+
+Prepend an @ to the column name to make it a parameter
+"""
+makeparam(s) = "@" * s
+
+"""
+    makeodbcparam(s)
+
+ODBC parameters are ? only instead of @name
+"""
+makeodbcparam(s) = "?"
+
+"""
+    savedataframe(con::DBInterface.Connection, df::AbstractDataFrame, table)
+
+Save a DataFrame to a database table, the names of the dataframe columns should be identical to the table column names in the database
+"""
+function savedataframe(con::ODBC.Connection, df::AbstractDataFrame, table)
+    # ODBC.load(df, con,table; append = true)
+    colnames = names(df)
+    paramnames = map(makeodbcparam, colnames) #add @ to column names
+    sql = "INSERT INTO $table ($(join(colnames, ", "))) VALUES ($(join(paramnames, ", ")));"
+    stmt = DBInterface.prepare(con, sql)
+    for row in eachrow(df)
+        DBInterface.execute(stmt, Vector(row))
+    end
+end
+function savedataframe(con::SQLite.DB, df::AbstractDataFrame, table)
+    colnames = names(df)
+    paramnames = map(makeparam, colnames) #add @ to column names
+    sql = "INSERT INTO $table ($(join(colnames, ", "))) VALUES ($(join(paramnames, ", ")));"
+    stmt = DBInterface.prepare(con, sql)
+    for row in eachrow(df)
+        DBInterface.execute(stmt, NamedTuple(row))
+    end
+end
+"""
+    prepareinsertstatement(db::SQLite.DB, table, columns)
+
+Prepare an insert statement for SQLite into table for columns
+"""
+function prepareinsertstatement(db::SQLite.DB, table, columns)
+    paramnames = map(makeparam, columns) # add @ to column name
+    sql = "INSERT INTO $table ($(join(columns, ", "))) VALUES ($(join(paramnames, ", ")));"
+    return DBInterface.prepare(db, sql)
+end
+"""
+    prepareinsertstatement(db::ODBC.Connection, table, columns)
+
+    Prepare an insert statement for SQL Server into table for columns
+"""
+function prepareinsertstatement(db::ODBC.Connection, table, columns)
+    paramnames = map(makeodbcparam, columns) # ? for each prameter
+    sql = "INSERT INTO $table ($(join(columns, ", "))) VALUES ($(join(paramnames, ", ")));"
+    return DBInterface.prepare(db, sql)
+end
+function insertwithidentity(db::ODBC.Connection, table, columns, values, keycol)
+    paramnames = map(makeodbcparam, columns) # ? for each prameter
+    sql = """
+    INSERT INTO $table ($(join(columns, ", "))) 
+    OUTPUT INSERTED.$keycol AS last_id
+    VALUES ($(join(paramnames, ", ")));
+    """
+    stmt = DBInterface.prepare(db, sql)
+    df = DBInterface.execute(stmt, values) |> DataFrame
+    return df[1, :last_id]
+end
+function insertwithidentity(db::SQLite.DB, table, columns, values, keycol)
+    paramnames = map(makeparam, columns)
+    sql = """
+    INSERT INTO $table ($(join(columns, ", "))) 
+    VALUES ($(join(paramnames, ", ")));
+    """
+    stmt = DBInterface.prepare(db, sql)
+    return DBInterface.lastrowid(DBInterface.execute(stmt, values))
+end
+"""
+    prepareselectstatement(db::SQLite.DB, table, columns::Vector{String}, filter::Vector{String})
+
+Return a statement to select columns from a table, with 0 to n columns to filter on
+"""
+function prepareselectstatement(db::SQLite.DB, table, columns::Vector{String}, filter::Vector{String})
+   # Start with the SELECT clause
+   select_clause = "SELECT " * join(columns, ", ") * " FROM " * table
+
+   # Check if there are any filter conditions and build the WHERE clause
+   if isempty(filter)
+       return DBInterface.prepare(db, select_clause)
+   else
+       where_clause = " WHERE " * join(["$col = @$col" for col in filter], " AND ")
+       return DBInterface.prepare(db, select_clause * where_clause)
+   end
+end
+"""
+    prepareselectstatement(db::SQLite.DB, table, columns::Vector{String}, filter::Vector{String})
+
+Return a statement to select columns from a table, with 0 to n columns to filter on
+"""
+function prepareselectstatement(db::ODBC.Connection, table, columns::Vector{String}, filter::Vector{String})
+   # Start with the SELECT clause
+   select_clause = "SELECT " * join(columns, ", ") * " FROM " * table
+
+   # Check if there are any filter conditions and build the WHERE clause
+   if isempty(filter)
+       return DBInterface.prepare(db, select_clause)
+   else
+       where_clause = " WHERE " * join(["$col = ?" for col in filter], " AND ")
+       return DBInterface.prepare(db, select_clause * where_clause)
+   end
+end
+function selectdataframe(db, table, columns::Vector{String}, filter::Vector{String}, filtervalues::Vector{Any})
+    stmt = prepareselectstatement(db, table, columns, filter)
+    return DBInterface.execute(db, stmt, filtervalues) |> DataFrame
+end
+function selectsourcesites(db, source::AbstractSource)
+    sql = """
+    SELECT s.* FROM sites s
+    JOIN sources ss ON s.source_id = ss.source_id
+    WHERE ss.name = '$(source.name)';
+    """
+    return DBInterface.execute(db, sql) |> DataFrame
 end
 """
     createsources(db::SQLite.DB)
@@ -471,7 +595,7 @@ function createvariables(db::SQLite.DB)
     "vocabulary_id" INTEGER,
     "description" TEXT,
     "note" TEXT,
-    "key" TEXT,
+    "keyrole" TEXT,
     CONSTRAINT "fk_variables_domain_id" FOREIGN KEY ("domain_id") REFERENCES "domains"("domain_id") ON DELETE NO ACTION ON UPDATE NO ACTION,
     CONSTRAINT "fk_variables_value_type_id" FOREIGN KEY ("value_type_id") REFERENCES "value_types"("value_type_id") ON DELETE NO ACTION ON UPDATE NO ACTION,
     CONSTRAINT "fk_variables_vocabulary_id" FOREIGN KEY ("vocabulary_id") REFERENCES "vocabularies"("vocabulary_id") ON DELETE NO ACTION ON UPDATE NO ACTION
@@ -578,7 +702,7 @@ function createvariables(db::ODBC.Connection)
         [vocabulary_id] INT,
         [description] NVARCHAR(MAX),
         [note] NVARCHAR(MAX),
-        [key] NVARCHAR(255),
+        [keyrole] NVARCHAR(255),
         CONSTRAINT [fk_variables_domain_id] FOREIGN KEY ([domain_id]) 
             REFERENCES [domains]([domain_id]) ON DELETE NO ACTION ON UPDATE NO ACTION,
         CONSTRAINT [fk_variables_value_type_id] FOREIGN KEY ([value_type_id]) 
@@ -854,11 +978,10 @@ function createinstruments(db::ODBC.Connection)
     DBInterface.execute(db, sql)
     sql = raw"""
     CREATE TABLE [instrument_documents] (
-        [intrument_document_id] INTEGER NOT NULL,
+        [intrument_document_id] INTEGER NOT NULL PRIMARY KEY IDENTITY(1,1),
         [instrument_id] INTEGER NOT NULL,
         [name] NVARCHAR(255) NOT NULL,
         [document] VARBINARY(MAX),
-        PRIMARY KEY ([intrument_document_id]),
         CONSTRAINT [fk_instrument_documents_instrument_id] FOREIGN KEY ([instrument_id]) REFERENCES [instruments] ([instrument_id]) ON DELETE CASCADE ON UPDATE NO ACTION,
         CONSTRAINT [u_instrument_documents] UNIQUE ([instrument_id], [name])
     )

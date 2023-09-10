@@ -9,8 +9,10 @@ using Dates
 #get environment variables
 dotenv()
 
-dbname = "RDA"
-@time createdatabase(ENV["RDA_DATABASE_PATH"], dbname, replace=true)
+#ENV["RDA_DBNAME"] = "RDA" #Don't use global variables
+# Use datbasesetup.jl to create the database
+@time createdatabase(ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], replace=true, sqlite = true)
+@time createdatabase(ENV["RDA_SERVER"], ENV["RDA_DBNAME"], replace=true, sqlite = false)
 
 
 """
@@ -18,9 +20,10 @@ INGEST CHAMPS DATA
 """
 #Step 1: Ingest macro data of sources: sites, instruments, protocols, ethics, vocabularies 
 source = CHAMPSSource()
-@time ingest_source(source, ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_INGEST_PATH"])
+@time ingest_source(source, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"], sqlite = true)
+@time ingest_source(source, ENV["RDA_SERVER"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"], sqlite = false)
 
-
+#
 # Step 2: Ingest data dictionaries, add variables and vocabularies
 CHAMPSdict = AbstractDictionary(
     domain_name="CHAMPS",
@@ -33,10 +36,12 @@ CHAMPSdict = AbstractDictionary(
     id_col = "champs_deid", site_col = "site_iso_code"
     )
 
-@time ingest_dictionary(CHAMPSdict, ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_DICTIONARY_PATH"])
+@time ingest_dictionary(CHAMPSdict, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_DICTIONARY_PATH"])
+@time ingest_dictionary(CHAMPSdict, ENV["RDA_SERVER"], ENV["RDA_DBNAME"], ENV["DATA_DICTIONARY_PATH"], sqlite = false)
 
+#=
 # For CHAMPS, add vocabularies for TAC results with multi-gene
-@time ingest_voc_CHAMPSMITS(ENV["RDA_DATABASE_PATH"], dbname, 
+@time ingest_voc_CHAMPSMITS(ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], 
                             ENV["DATA_INGEST_PATH"], "CHAMPS", "De_identified_data", 
                             "CHAMPS_deid_tac_vocabulary.xlsx")
                             
@@ -64,11 +69,11 @@ CHAMPSIngest = Ingest(source_name = "CHAMPS",
                 author = "YUE CHU"
                 )
                 
-meta_info = ingest_deaths(CHAMPSIngest, ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_INGEST_PATH"])
+meta_info = ingest_deaths(CHAMPSIngest, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"])
 
 # Step 4: Import datasets, and link datasets to deaths
 
-@time ingest_data(CHAMPSIngest, ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_INGEST_PATH"],
+@time ingest_data(CHAMPSIngest, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"],
                 meta_info["transformation_id"], meta_info["ingestion_id"])
 
 #=
@@ -87,12 +92,12 @@ CHAMPSIngest1 = Ingest(source_name = "CHAMPS",
                 author = "YC"
                 )
 
-db = opendatabase(ENV["RDA_DATABASE_PATH"], dbname)
+db = opendatabase(ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"])
 source_id = get_source(db, CHAMPSIngest1.source_name)
 ingestion_id = add_ingestion(db, source_id, today(), CHAMPSIngest1.ingest_desc)
 transformation_id = add_transformation(db, 1, 1, CHAMPSIngest1.transform_desc, 
                                         CHAMPSIngest1.code_reference, today(), CHAMPSIngest1.author)
-@time ingest_data(CHAMPSIngest1, ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_INGEST_PATH"],
+@time ingest_data(CHAMPSIngest1, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"],
                 transformation_id,ingestion_id)
 
 # check data
@@ -111,13 +116,13 @@ INGEST COMSA DATA
 """
 #Step 1: Ingest macro data of sources: sites, instruments, protocols, ethics, vocabularies 
 source = COMSASource()
-@time ingest_source(source, ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_INGEST_PATH"])
+@time ingest_source(source, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"])
 
 
 # Step 2: Ingest data dictionaries, add variables and vocabularies
 COMSAdict = AbstractDictionary(domain_name="COMSA",dictionaries=["Format_Comsa_WHO_VA_20230308"],
                          id_col = "comsa_id", site_col = "provincia")
-@time ingest_dictionary(COMSAdict, ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_DICTIONARY_PATH"])
+@time ingest_dictionary(COMSAdict, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_DICTIONARY_PATH"])
 
 
 # Step 3: Ingest deaths to deathrows, return transformation_id and ingestion_id
@@ -141,10 +146,11 @@ COMSAIngest = Ingest(source_name = "COMSA",
                 author = "YC"
                 )
                 
-meta_info = ingest_deaths(COMSAIngest,ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_INGEST_PATH"])
+meta_info = ingest_deaths(COMSAIngest,ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"])
 
 # Step 4: Import datasets, and link datasets to deaths
 
-@time ingest_data(COMSAIngest, ENV["RDA_DATABASE_PATH"], dbname, ENV["DATA_INGEST_PATH"],
+@time ingest_data(COMSAIngest, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"],
                 meta_info["transformation_id"], meta_info["ingestion_id"])
 
+=#

@@ -28,6 +28,7 @@ export
 #get_table, createsources, createprotocols, createtransformations,
 #createvariables, createdatasets, createinstruments, createdeaths
 
+ODBC.bindtypes(x::Vector{UInt8}) = ODBC.API.SQL_C_BINARY, ODBC.API.SQL_LONGVARBINARY
 
 """
 Structs
@@ -177,46 +178,44 @@ datapath: root folder with data from all sources [DATA_INGEST_PATH]
 """
 
 function ingest_source(source::AbstractSource, dbpath::String, dbname::String,
-    datapath::String)
-    db = opendatabase(dbpath, dbname)
+    datapath::String; sqlite=true)
+    db = opendatabase(dbpath, dbname; sqlite)
     try
-        SQLite.transaction(db)
+        DBInterface.transaction(db) do
 
-        source_id = add_source(source, db)
+            source_id = add_source(source, db)
 
-        # Add sites and country iso2 codes
-        add_sites(source, db, source_id, datapath)
+            # Add sites and country iso2 codes
+            add_sites(source, db, source_id, datapath)
 
-        # Add instruments
-        add_instruments(source, db, datapath)
+            # Add instruments
+            add_instruments(source, db, datapath)
 
-        # Add Protocols
-        add_protocols(source, db, datapath)
+            # Add Protocols
+            add_protocols(source, db, datapath)
 
-        # Add Ethics
-        add_ethics(source, db, datapath)
+            # Add Ethics
+            add_ethics(source, db, datapath)
 
-        SQLite.commit(db)
+        end
 
         return nothing
     finally
-        close(db)
+        DBInterface.close!(db)
     end
 end
 
-
 """
+    ingest_dictionary(dict::AbstractDictionary, dbpath::String, dbname::String, dictionarypath::String; sqlite = true)
+
 Step 2: 
 Ingest data dictionaries, add variables and vocabularies
-ingest_dictionary(dict::AbstractDictionary, dbpath::String, dbname::String, dictionarypath::String)
-
 """
-
-function ingest_dictionary(dict::AbstractDictionary, dbpath::String, dbname::String, dictionarypath::String)
-    db = opendatabase(dbpath, dbname)
+function ingest_dictionary(dict::AbstractDictionary, dbpath::String, dbname::String, dictionarypath::String; sqlite=true)
+    db = opendatabase(dbpath, dbname; sqlite)
 
     try
-        SQLite.transaction(db)
+        DBInterface.transaction(db) do
 
         domain = add_domain(db, dict.domain_name, dict.domain_name)
 
@@ -227,21 +226,17 @@ function ingest_dictionary(dict::AbstractDictionary, dbpath::String, dbname::Str
             println("Variables from $filename ingested.")
         end
 
-        ##= 
         # Mark key fields for easier reference later
         row = lookup_variables(db, dict.id_col, domain)
-        DBInterface.execute(db, "UPDATE variables SET key = 'id' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
+        DBInterface.execute(db, "UPDATE variables SET keyrole = 'id' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
 
         row = lookup_variables(db, dict.site_col, domain)
-        DBInterface.execute(db, "UPDATE variables SET key = 'site_name' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
+        DBInterface.execute(db, "UPDATE variables SET keyrole = 'site_name' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
 
-        ##=#
-
-        SQLite.commit(db)
-
+        end
         return nothing
     finally
-        close(db)
+        DBInterface.close!(db)
     end
 end
 
@@ -293,17 +288,17 @@ end
 
 
 """
+    ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::String,
+    transformation_id::Integer, ingestion_id::Integer, death_ingestion_id=nothing)
+
+
 Step 4: 
 Import datasets, and link datasets to deaths
-
-ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::String,
-                        transformation_id::Int64, ingestion_id::Int64)
 # transformation_id and ingestion_id can be from step 3 outputs if ingesting both death and datasets at the same time.
 # If only importing dataset without ingesting deaths, run add_ingestion() and add_transformation() to get new ids.
 """
-
 function ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::String,
-    transformation_id::Int64, ingestion_id::Int64, death_ingestion_id=nothing)
+    transformation_id::Integer, ingestion_id::Integer, death_ingestion_id=nothing)
     db = opendatabase(dbpath, dbname)
     try
         source = get_source(db, ingest.source_name)
@@ -353,21 +348,15 @@ function ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::S
     end
 end
 
-
-"""
-Detailed functions
-"""
-
 """
     add_source(source::AbstractSource, db::SQLite.DB)
 
 Add source `name` to the sources table, and returns the `source_id`
 """
-function add_source(source::AbstractSource, db::SQLite.DB)
+function add_source(source::AbstractSource, db)
     id = get_source(db, source.name)
     if ismissing(id)  # insert source
-        stmt = DBInterface.prepare(db, "INSERT INTO sources (name) VALUES (@name)")
-        id = DBInterface.lastrowid(DBInterface.execute(stmt, (name = source.name)))
+        id = RDAIngest.insertwithidentity(db, "sources", ["name"], [source.name], "source_id")
     end
     return id
 end
@@ -378,7 +367,7 @@ end
 
 Return the `source_id` of source `name`, returns `missing` if source doesn't exist
 """
-function get_source(db::SQLite.DB, name)
+function get_source(db, name)
     return get_namedkey(db, "sources", name, :source_id)
 end
 
@@ -388,13 +377,11 @@ end
  Return the integer key from table `table` in column `keycol` (`keycol` must be a `Symbol`) for key with name `key`
 """
 function get_namedkey(db, table, key, keycol)
-    sql = "SELECT * FROM $table WHERE name = @name"
-    stmt = DBInterface.prepare(db, sql)
-    result = DBInterface.execute(stmt, (name = key))
-    if isempty(result)
+    stmt = prepareselectstatement(db, table, ["*"], ["name"])
+    df = DBInterface.execute(stmt, [key]) |> DataFrame
+    if nrow(df) == 0
         return missing
     else
-        df = DataFrame(result)
         return df[1, keycol]
     end
 end
@@ -405,15 +392,8 @@ end
 Returns the `variable_id` of variable named `name` in domain with id `domain`
 """
 function get_variable(db, domain, name)
-    sql = """
-    SELECT
-      variable_id id
-    FROM variables
-    WHERE domain_id = @domain
-      AND name = @name
-    """
-    stmt = DBInterface.prepare(db, sql)
-    result = DBInterface.execute(stmt, (domain=domain, name=name))
+    stmt = prepareselectstatement(db, "variables", ["variable_id"], ["domain_id", "name"])
+    result = DBInterface.execute(stmt, [domain, name])
     if isempty(result)
         return missing
     else
@@ -427,51 +407,42 @@ end
 
 Add domain to the domain table if not exist, and returns the domain id
 """
-function add_domain(db::SQLite.DB, domain_name::String, domain_description::String="")
+function add_domain(db, domain_name::String, domain_description::String="")
     domain = get_domain(db, domain_name)
-
-    if ismissing(domain)
-        # Insert domain
-        sql = raw"""
-        INSERT INTO domains (name, description) VALUES (@name, @description)
-        """
-        stmt = DBInterface.prepare(db, sql)
-        domain = DBInterface.lastrowid(DBInterface.execute(stmt,
-            (name=domain_name, description=domain_description)))
-
-        println("Domain $domain_name added.")
+    if ismissing(domain)  # insert source
+        domain = RDAIngest.insertwithidentity(db, "domains", ["name", "description"], [domain_name, domain_description], "domain_id")
     end
-
     return domain
 end
 
 """
-    get_domain(db::SQLite.DB, domainname)
+    get_domain(db, domain_name::String)
 
 Return the domain_id for domain named `domain_name`
 """
-function get_domain(db::SQLite.DB, domain_name::String)
+function get_domain(db, domain_name::String)
     return get_namedkey(db, "domains", domain_name, Symbol("domain_id"))
 end
 
 """
-    add_sites(source::AbstractSource, db::SQLite.DB, sourceid::Int64, datapath::String)
+    add_sites(source::CHAMPSSource, db, sourceid::Integer, datapath::String)
 
 Add sites and country iso2 codes to sites table
 """
-
-function add_sites(source::CHAMPSSource, db::SQLite.DB, sourceid::Int64, datapath::String)
+function add_sites(source::CHAMPSSource, db, sourceid::Integer, datapath::String)
     sites = read_sitedata(source, datapath, sourceid)
 
     select!(sites,
         Symbol(source.site_col) => ByRow(x -> x) => :site_name,
         Symbol(source.country_col) => ByRow(x -> x) => :country_iso2,
         :source_id)
+    # ODBC can't deal with InlineStrings
+    transform!(sites, :site_name => ByRow(x -> String(x)) => :site_name, :country_iso2 => ByRow(x -> String(x)) => :country_iso2)
     savedataframe(db, sites, "sites")
     println("Site names and country iso2 codes ingested.")
     return nothing
 end
-function add_sites(source::COMSASource, db::SQLite.DB, sourceid::Int64, datapath::String)
+function add_sites(source::COMSASource, db, sourceid::Integer, datapath::String)
     sites = read_sitedata(source, datapath, sourceid)
 
     if (source.country_iso2 == "" || !isdefined(source, Symbol("country_iso2")))
@@ -481,6 +452,8 @@ function add_sites(source::COMSASource, db::SQLite.DB, sourceid::Int64, datapath
             Symbol(source.site_col) => ByRow(x -> x) => :site_name,
             [] => Returns(source.country_iso2) => :country_iso2,
             :source_id)
+        # ODBC can't deal with InlineStrings
+        transform!(sites, :site_name => ByRow(x -> String(x)) => :site_name, :country_iso2 => ByRow(x -> String(x)) => :country_iso2)
         savedataframe(db, sites, "sites")
         println("Site names and country iso2 codes ingested.")
     end
@@ -504,47 +477,36 @@ Add protocols
 Todo: how protocols link to enthics_id, need a mapping dictionary? 
 """
 
-function add_protocols(source::AbstractSource, db::SQLite.DB, datapath::String)
+function add_protocols(source::AbstractSource, db, datapath::String)
 
     # Insert protocol names
-    sql = raw"""
-    INSERT INTO protocols (name, description) VALUES (@name, @description)
-    """
-    stmt_name = DBInterface.prepare(db, sql)
+    stmt_name = prepareinsertstatement(db, "protocols", ["name", "description"])
 
     # Insert protocol documents
-    sql = raw"""
-    INSERT INTO protocol_documents (protocol_id, name, document) VALUES (@protocol_id, @name, @document)
-    """
-    stmt_doc = DBInterface.prepare(db, sql)
+    stmt_doc = prepareinsertstatement(db, "protocol_documents", ["protocol_id", "name", "document"])
 
     # Insert site protocols 
-    sql = raw"""
-    INSERT INTO site_protocols (site_id, protocol_id) VALUES (@site_id, @protocol_id)
-    """
-    stmt_site = DBInterface.prepare(db, sql)
+    stmt_site = prepareinsertstatement(db, "site_protocols", ["site_id", "protocol_id"])
 
-    sites = DBInterface.execute(db, "SELECT * FROM sites") |> DataFrame
+    sites = selectsourcesites(db, source)
 
     for (key, value) in source.protocols
 
         # Add protocol
-        DBInterface.execute(stmt_name, (name="$value", description="$key"))
+        DBInterface.execute(stmt_name, [value, key])
 
         # Get protocol id
-        row = DBInterface.execute(db, "SELECT * FROM protocols WHERE name = '$value'") |> DataFrame
+        protocol_id = get_namedkey(db, "protocols", value, Symbol("protocol_id"))
 
         # Add site protocol
         for site in eachrow(sites)
-            DBInterface.execute(stmt_site, (site_id=site.site_id, protocol_id=row.protocol_id))
+            DBInterface.execute(stmt_site, [site.site_id, protocol_id])
         end
 
         # Add protocol documents
         file = read_data(DocPDF(joinpath(datapath, source.name, source.protocolfolder), "$value"))
-        DBInterface.execute(stmt_doc,
-            (protocol_id=row.protocol_id, name="$value.pdf", document=file))
-        println("Protocol document $value.pdf ingested.")
-
+        DBInterface.execute(stmt_doc, [protocol_id, value, file])
+        println("Protocol document $value ingested.")
     end
     return nothing
 end
@@ -556,32 +518,25 @@ end
 Add survey instruments
 """
 
-function add_instruments(source::AbstractSource, db::SQLite.DB, datapath::String)
+function add_instruments(source::AbstractSource, db, datapath::String)
 
     # Insert instrument names
-    sql = raw"""
-    INSERT INTO instruments (name, description) VALUES (@name, @description)
-    """
-    stmt_name = DBInterface.prepare(db, sql)
+    stmt_name = prepareinsertstatement(db, "instruments", ["name", "description"])
 
     # Insert instrument documents
-    sql = raw"""
-    INSERT INTO instrument_documents (instrument_id, name, document) VALUES (@instrument_id, @name, @document)
-    """
-    stmt_doc = DBInterface.prepare(db, sql)
+    stmt_doc = prepareinsertstatement(db, "instrument_documents", ["instrument_id", "name", "document"])
 
     for (key, value) in source.instruments
 
         # Add instruments
-        DBInterface.execute(stmt_name, (name="$value", description="$key"))
+        DBInterface.execute(stmt_name, [value, key])
 
         # Get instrument id
-        row = DBInterface.execute(db, "SELECT * FROM instruments WHERE name = '$value'") |> DataFrame
+        instrument_id = get_namedkey(db, "instruments", value, Symbol("instrument_id"))
 
         # Add instrument documents
         file = read_data(DocPDF(joinpath(datapath, source.name, source.instrumentfolder), "$value"))
-        DBInterface.execute(stmt_doc,
-            (instrument_id=row.instrument_id, name="$value", document=file))
+        DBInterface.execute(stmt_doc, [instrument_id, value, file])
         println("Instrument document $value ingested.")
     end
     return nothing
@@ -594,47 +549,36 @@ end
 Ethics document, committee and reference need to be in matching order
 """
 
-function add_ethics(source::AbstractSource, db::SQLite.DB, datapath::String)
+function add_ethics(source::AbstractSource, db, datapath::String)
 
     # Insert ethics names
-    sql = raw"""
-    INSERT INTO ethics (name, ethics_committee, ethics_reference) VALUES (@name, @ethics_committee, @ethics_reference)
-    """
-    stmt_name = DBInterface.prepare(db, sql)
+    stmt_name = prepareinsertstatement(db, "ethics", ["name", "ethics_committee", "ethics_reference"])
 
     for (key, value) in source.ethics
-        DBInterface.execute(stmt_name, (name="$(value[2])",
-            ethics_committee="$key",
-            ethics_reference="$(value[1])"))
+        DBInterface.execute(stmt_name, [value[2], key, value[1]])
     end
 
     # Insert ethics documents
-    sql = raw"""
-    INSERT INTO ethics_documents (ethics_id, name, description, document) VALUES (@ethics_id, @name, @description, @document)
-    """
-    stmt_doc = DBInterface.prepare(db, sql)
+    stmt_doc = prepareinsertstatement(db, "ethics_documents", ["ethics_id", "name", "description", "document"])
 
     for (key, value) in source.ethics
         file = read_data(DocPDF(joinpath(datapath, source.name, source.ethicsfolder), "$(value[2])"))
 
         # Get ethics id
-        row = DBInterface.execute(db, "SELECT * FROM ethics WHERE name = '$(value[2])'") |> DataFrame
+        ethics_id = get_namedkey(db, "ethics", value[2], Symbol("ethics_id"))
 
-        DBInterface.execute(stmt_doc,
-            (ethics_id=row.ethics_id, name="$(value[2])", description="$key ($(value[1]))", document=file))
+        DBInterface.execute(stmt_doc, [ethics_id, value[2], "$key ($(value[1]))", file])
         println("Ethics document $(value[2]) ingested.")
     end
     return nothing
 end
 
-
 """
-add_variables(variables::AbstractDataFrame, db::SQLite.DB, domain_id::Int64)
+    add_variables(variables::AbstractDataFrame, db::SQLite.DB, domain_id::Integer)
 
 Add variables from a variable dataframe to variables table
 """
-
-function add_variables(variables::AbstractDataFrame, db::SQLite.DB, domain_id::Int64)
+function add_variables(variables::AbstractDataFrame, db::SQLite.DB, domain_id::Integer)
 
     # Check if variables dataframe has all required columns
     required_columns = ["Column_Name", "DataType", "Description", "Note", "Vocabulary"]
@@ -671,38 +615,77 @@ function add_variables(variables::AbstractDataFrame, db::SQLite.DB, domain_id::I
     end
     return nothing
 end
+"""
+    add_variables(variables::AbstractDataFrame, db::ODBC.Connection, domain_id::Integer)
+
+Add variables from a variable dataframe to variables table
+"""
+function add_variables(variables::AbstractDataFrame, db::ODBC.Connection, domain_id::Integer)
+
+    # Check if variables dataframe has all required columns
+    required_columns = ["Column_Name", "DataType", "Description", "Note", "Vocabulary"]
+    missing_columns = filter(col -> !(col in names(variables)), required_columns)
+    if !isempty(missing_columns)
+        error("Variables dataframe missing columns: ", join(missing_columns, ", "))
+    end
+    # ODBC can't deal with InlineStrings
+    transform!(variables, :Column_Name => ByRow(x -> String(x)) => :Column_Name)
+
+    # Check if variable exists
+    sql = """
+        SELECT 1 
+        FROM variables 
+        WHERE domain_id = ? AND name = ?
+    """
+    exist_stmt = DBInterface.prepare(db, sql)
+    sql = """
+        UPDATE variables
+        SET 
+            vocabulary_id = ?,
+            description = ?,
+            note = ?
+        WHERE domain_id = ? AND name = ? 
+    """
+    update_stmt = DBInterface.prepare(db, sql)
+    sql = """
+    INSERT INTO variables (domain_id, name, value_type_id, vocabulary_id, description, note)
+    VALUES (?, ?, ?, ?, ?, ?)
+    """
+    insert_stmt = DBInterface.prepare(db, sql)
+    # Add variables
+    if !("domain_id" in names(variables))
+        insertcols!(variables, 1, :domain_id => domain_id)
+    end
+
+    for row in eachrow(variables)
+        id = missing
+        if !ismissing(row.Vocabulary)
+            id = add_vocabulary(db, row.Vocabulary)
+        end
+        var_exist = !isempty(DBInterface.execute(exist_stmt, [row.domain_id, row.Column_Name]))
+        if var_exist
+            DBInterface.execute(update_stmt, [id, row.Description, row.Note, row.domain_id, row.Column_Name])
+        else
+            DBInterface.execute(insert_stmt, [row.domain_id, row.Column_Name, row.DataType, id, row.Description, row.Note])
+        end
+    end
+    return nothing
+end
 
 """
     add_vocabulary(db::SQLite.DB, vocabulary::Vocabulary)
 
 Insert a vocabulary and its items into a RDA database, returns the vocabulary_id of the inserted vocabulary
 """
-
-function add_vocabulary(db::SQLite.DB, vocabulary::Vocabulary)
+function add_vocabulary(db, vocabulary::Vocabulary)
     id = get_namedkey(db, "vocabularies", vocabulary.name, "vocabulary_id")
     if !ismissing(id)
         return id
     end
-    #vocabulary insert SQL
-    sql = """
-    INSERT INTO vocabularies (name, description) VAlUES (@name, @description)
-    RETURNING *;
-    """
-    stmt = DBInterface.prepare(db, sql)
-    v = DBInterface.execute(stmt, (name=vocabulary.name, description=vocabulary.description)) |> DataFrame
-    if nrow(v) > 0
-        id = v[1, :vocabulary_id]
-    else
-        error("Unable to insert vocabulary '$(vocabulary.name)'")
-    end
-    #vocabulary item insert SQL
-    sql = """
-    INSERT INTO vocabulary_items(vocabulary_id, value, code, description)
-    VALUES (@vocabulary_id, @value, @code, @description)
-    """
-    stmt = DBInterface.prepare(db, sql)
+    id = insertwithidentity(db, "vocabularies", ["name", "description"], [vocabulary.name, vocabulary.description], "vocabulary_id")
+    stmt = prepareinsertstatement(db, "vocabulary_items", ["vocabulary_id", "value", "code", "description"])
     for item in vocabulary.items
-        DBInterface.execute(stmt, (vocabulary_id=id, value=item.value, code=item.code, description=item.description))
+        DBInterface.execute(stmt, [id, item.value, item.code, item.description])
     end
     return id
 end
@@ -710,15 +693,13 @@ end
 
 
 """
-
-    ingest_voc_CHAMPSMITS(datapath::String, source::String, datafolder::String, tac_vocabulary::String, domain_id::Int64)
+    ingest_voc_CHAMPSMITS(dbpath::String, dbname::String, datapath::String, source::String, datafolder::String, tac_vocabulary::String)
 
 This function ingets vocabulary for CHAMPS tac result 
 
 tac_vocabulary: CHAMPS_deid_tac_vocabulary.xlsx created from CHAMPS data description, 
 first sheet include pathogen and multi-gene result code, rest include assay pattern and corresponding pathogen result label.
 """
-
 function ingest_voc_CHAMPSMITS(dbpath::String, dbname::String, datapath::String, source::String, datafolder::String, tac_vocabulary::String)
 
     db = opendatabase(dbpath, dbname)
@@ -851,11 +832,11 @@ end
 
 
 """
-    add_dataset_ingestion(db::SQLite.DB, dataset_id, transformation_id, ingestion_id)
+    add_dataset_ingestion(db::SQLite.DB, dataset_id, transformation_id::Integer, ingestion_id::Integer)
 
 Record a dataset ingestion into ingest_datasets
 """
-function add_dataset_ingestion(db::SQLite.DB, dataset_id, transformation_id::Int64, ingestion_id::Int64)
+function add_dataset_ingestion(db::SQLite.DB, dataset_id, transformation_id::Integer, ingestion_id::Integer)
     sql = """
     INSERT INTO ingest_datasets (data_ingestion_id, transformation_id, dataset_id)
     VALUES (@data_ingestion_id, @transformation_id, @dataset_id);
@@ -883,12 +864,11 @@ end
 
 
 """
-add_ingestion(db::SQLite.DB, source_id::Int64, date::Date, description::String)::Int64
+    add_ingestion(db::SQLite.DB, source_id::Integer, date::Date, description::String)::Integer
 
 Insert a data ingestion into the data_ingestions table and return the data_ingestion_id
 """
-
-function add_ingestion(db::SQLite.DB, source_id::Int64, date::Date, description::String)::Int64
+function add_ingestion(db::SQLite.DB, source_id::Integer, date::Date, description::String)::Integer
     sql = """
     INSERT INTO data_ingestions (source_id, date_received, description)
     VALUES (@source_id, @date, @description)
@@ -906,11 +886,11 @@ function add_ingestion(db::SQLite.DB, source_id::Int64, date::Date, description:
 end
 
 """
-add_transformation(db::SQLite.DB, type::Int64, status::Int64, description::String, code_reference::String, date_created::Date, created_by::String)
+    add_transformation(db::SQLite.DB, type::Integer, status::Integer, description::String, code_reference::String, date_created::Date, created_by::String)
 
 Add a transformation to the transformations table
 """
-function add_transformation(db::SQLite.DB, type::Int64, status::Int64, description::String, code_reference::String, date_created::Date, created_by::String)
+function add_transformation(db::SQLite.DB, type::Integer, status::Integer, description::String, code_reference::String, date_created::Date, created_by::String)
     sql = """
     INSERT INTO transformations (transformation_type_id, transformation_status_id, description, code_reference, date_created, created_by)
     VALUES (@type, @status, @description, @code_reference, @date_created, @created_by)
@@ -928,18 +908,16 @@ end
 
 
 """
-import_datasets(db::SQLite.DB, datapath::String,
-    ingest::Ingest, #delim::Char, quotechar::Char, dateformat::String, decimal::Char,
-    filename::String, description::String,
-    domain_id::Int64,transformation_id::Int64, ingestion_id::Int64)::Int64
+    import_datasets(db::SQLite.DB, datapath::String,
+    ingest::Ingest, filename::String, description::String,
+    domain_id::Integer, transformation_id::Integer, ingestion_id::Integer)::Integer
 
 Insert datasets into SQLite db and returns the datatset_id
 
 """
-
 function import_datasets(db::SQLite.DB, datapath::String,
     ingest::Ingest, filename::String, description::String,
-    domain_id::Int64, transformation_id::Int64, ingestion_id::Int64)::Int64
+    domain_id::Integer, transformation_id::Integer, ingestion_id::Integer)::Integer
     try
         SQLite.transaction(db)
 
@@ -947,7 +925,7 @@ function import_datasets(db::SQLite.DB, datapath::String,
             ingest.delim, ingest.quotechar, ingest.dateformat, ingest.decimal))
 
         variables = lookup_variables(db, names(data), domain_id)
-        var_lookup = Dict{String,Int64}(zip(variables.name, variables.variable_id))
+        var_lookup = Dict{String,Integer}(zip(variables.name, variables.variable_id))
 
         # Add dataset entry to datasets table
         dataset_id = add_datasets(db, filename, description)
@@ -1001,11 +979,11 @@ function add_data_column(db::SQLite.DB, variable_id, coldata)
 end
 
 """
-    lookup_variables(db::SQLite.DB, variable_names, domain)
+    lookup_variables(db, variable_names, domain)
 
 Returns a DataFrame with dataset variable names and ids
 """
-function lookup_variables(db::SQLite.DB, variable_names, domain)
+function lookup_variables(db, variable_names, domain)
     names = DataFrame(:name => variable_names)
     sql = """
     SELECT name, variable_id FROM variables
@@ -1137,7 +1115,6 @@ struct DocPDF
     name::String
 end
 
-# Define functions that calculate area for different shapes
 function read_data(DocName::DocPDF)
     file = joinpath(DocName.path, "$(DocName.name)") #.pdf
     if !isfile(file)
@@ -1251,44 +1228,6 @@ lines(str) = split(str, '\n')
 
 
 """
-    makeparam(s)
-
-Prepend an @ to the column name to make it a parameter
-"""
-makeparam(s) = "@" * s
-
-"""
-    makeodbcparam(s)
-
-ODBC parameters are ? only instead of @name
-"""
-makeodbcparam(s) = "?"
-
-"""
-    savedataframe(con::DBInterface.Connection, df::AbstractDataFrame, table)
-
-Save a DataFrame to a database table, the names of the dataframe columns should be identical to the table column names in the database
-"""
-function savedataframe(con::ODBC.Connection, df::AbstractDataFrame, table)
-    colnames = names(df)
-    paramnames = map(makeodbcparam, colnames) #add @ to column names
-    sql = "INSERT INTO $table ($(join(colnames, ", "))) VALUES ($(join(paramnames, ", ")));"
-    stmt = DBInterface.prepare(con, sql)
-    for row in eachrow(df)
-        DBInterface.execute(stmt, NamedTuple(row))
-    end
-end
-function savedataframe(con::SQLite.DB, df::AbstractDataFrame, table)
-    colnames = names(df)
-    paramnames = map(makeparam, colnames) #add @ to column names
-    sql = "INSERT INTO $table ($(join(colnames, ", "))) VALUES ($(join(paramnames, ", ")));"
-    stmt = DBInterface.prepare(con, sql)
-    for row in eachrow(df)
-        DBInterface.execute(stmt, NamedTuple(row))
-    end
-end
-
-"""
     get_last_deathingest(source)
 
 Get ingestion id for latest death ingestion for source
@@ -1334,11 +1273,11 @@ function add_datasets(db::SQLite.DB, dataset_name::String, dataset_description::
 end
 
 """
-    add_datarows(db, nrow)
+    add_datarows(db::SQLite.DB, nrow::Integer, dataset_id::Integer)
 
-Define data rows in the datarows table
+    Define data rows in the datarows table
 """
-function add_datarows(db::SQLite.DB, nrow::Int64, dataset_id::Int64)
+function add_datarows(db::SQLite.DB, nrow::Integer, dataset_id::Integer)
     stmt = DBInterface.prepare(db, "INSERT INTO datarows (dataset_id) VALUES(@dataset_id);")
     for i = 1:nrow
         DBInterface.execute(stmt, (dataset_id = dataset_id))
