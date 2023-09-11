@@ -162,12 +162,6 @@ Base.@kwdef struct Ingest
     #date::Date = today()    
 end
 
-
-
-"""
-Core functions
-"""
-
 """
 Step 1: 
 Ingest macro data of sources: sites, instruments, protocols, ethics, vocabularies 
@@ -176,7 +170,6 @@ Ingest macro data of sources: sites, instruments, protocols, ethics, vocabularie
 
 datapath: root folder with data from all sources [DATA_INGEST_PATH]
 """
-
 function ingest_source(source::AbstractSource, dbpath::String, dbname::String,
     datapath::String; sqlite=true)
     db = opendatabase(dbpath, dbname; sqlite)
@@ -247,7 +240,6 @@ Ingest deaths to deathrows, return transformation_id and ingestion_id
 ingest_deaths(ingest::Ingest, db::SQLite.DB, datapath::String)
 
 """
-
 function ingest_deaths(ingest::Ingest, dbpath::String, dbname::String, datapath::String)
     db = opendatabase(dbpath, dbname)
 
