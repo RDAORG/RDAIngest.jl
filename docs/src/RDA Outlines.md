@@ -1,18 +1,18 @@
 # Reference Death Archive (RDA)
-RDA project for users of Verbal Autopsy HDSS dataset. RDA is data archive system to automate the Verbal Autopsy data 
+RDA project is developed for users of Verbal Autopsy HDSS dataset. RDA is geared to automate ingest the Verbal Autopsy data to the core data archive, and convert to the ICD interVA / inSilico VA systems with designed flow. 
 
-Built in Julia codes, wich can be broadly used for VA uses. 
+All the systems is built and developed in Julia code to be consistent and quick digestion, and which can be broadly used for any VA users. 
 
-This documentation is to describe the key sturctures of the data archive and key relationships. More detailed information for each modeule is described in.
+This documentation is to describe the key sturctures of the data archive system and key variables relationships. More detailed information for each modolue is described in.
 
-1. `RDA Ingest.jl`
-2. `RDA Clean.jl`
-3. `RDA Convert.jl`
+1. [`RDA Ingest.jl`](@ref)
+2. [`RDA Clean.jl`](@ref)
+3. [`RDA Convert.jl`](@ref)
 
-## Multiple sources Death registered data
+## Multiple Sources Death Registered Data
 
-Utilizing  data  from  multiple  sites,  or  
-better  yet  designing  prospective  multi-site  studies,  improves  the  representativeness  of
+Utilizing  data sources from  multiple  sites,  or  
+better  yet  designing  prospective  multi-site  studies,  improves  the  representativeness  of the region. The  result  of  a  combined  DSS-sample  vital  registration  system  would  be  a  comparatively  inexpensive  basic  data   collection  platform  that  is  both  nationally  representative  and  detailed  enough  at  the   regional level to provide a means of conducting in-depth investigations. Each  site  is  assigned  a  unique  identifier  that  is  used  to differentiate  each  site’s  primary  data  from  the  primary  data  from  other  sites  in  all  the   primary data tables in RDA.
 
 In the case of the CHAMPS data, the data dictionaries are manually extracted from the data distribution document and saved as csv files in the RDA repository.
 The format of the file is (the field separator is a semi-colon):
@@ -22,7 +22,7 @@ The format of the file is (the field separator is a semi-colon):
  * `Note`: A note regarding the variable
 
 ### Aim 
-Through make this systems, the obejective of this study is 
+Through make this systems, the obejective of this project is 
 - With the updates of data sources, it can be updated automatically simple use.
 - Clearer work flow 
 - Three main modules of RDA Ingest, RDA Clean, RDA convert, we can make more strightforward and simplify each step. 
@@ -30,9 +30,9 @@ Through make this systems, the obejective of this study is
 
 ### 1. Data Structure & Scheme
 The conceptual model of the *Reference Death Archive* is shown in Figure 1.
-![Fig 1: RDA Conceptual Model](RDA_Conceptual_Model.png)
+![Fig 1: RDA Data Archiving Schema ](RDA_Datamodel_V2.0.png)
 
-This overall describe how the each islands of table linked to each other. 
+This overall describe how the each islands of table linked to each other. Tables are represented by boxes, table names are in the upper section of each box, field  names  are  in  the  lower  section  of  each  box,  primary keys  are  appeared with "key" signs next to items, and relationships are represented by the “crows feet” lines between tables –for foreign key relationship with the many side of the relationship represented by the crow’s foot. Next to each variable, there is a data type is defined to maintain the consistency.
 
 
 
@@ -40,6 +40,8 @@ This overall describe how the each islands of table linked to each other.
 
 Sources sites/ protocols
 
+The origin of the data is described in the following tables:
+The **source_id** in the *Sources* table is the primary key and in the *sites* table **source_id** is the foreignkey variable to link the sourcoes of sites and  **site_id** is the primary key. Source_id and Sites_id is the starting point to collect the death data and data_ingestions events to digest the data into the system.
 
 | Table Name              | Description                                                                   |
 |:----------------------- | :---------------------------------------------------------------------------- |
@@ -47,7 +49,7 @@ Sources sites/ protocols
 | sites                   | The surveillance site whre the data collection (or death) occured             |
 
 ### 3. Data Collection (Protocols & Ethics)
-The data collection protocol and ethical approval are described in the following tables:
+The data collection protocol and ethical approval are described in the following tables: Through the table *the site protocols* many to many rleationship, with the **protocol_id** foreign key  linked to protocol table which has ethics_id (foreign key) to connect to ethics table  and also connect to protocol instruments which is further directed to instruments which will be described in the following section.
 
 | Table Name              | Description                                                                   |
 |:----------------------- | :---------------------------------------------------------------------------- |
@@ -58,7 +60,7 @@ The data collection protocol and ethical approval are described in the following
 | ethics_documents        | Documents describing the ethical approval                                     |
 
 ### 4. Data collection instruments
-The data collection instruments are described in the following tables:
+The data collection instruments are described in the following tables: In the instruments, 
 
 | Table Name              | Description                                                                   |
 |:----------------------- | :---------------------------------------------------------------------------- |
