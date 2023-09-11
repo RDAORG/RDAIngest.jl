@@ -55,6 +55,7 @@ Base.@kwdef struct CHAMPSSource <: AbstractSource
     site_col::String = "site_iso_code"
     country_col::String = "site_iso_code"
     country_iso2::String = "" #check - probably don't need this
+    id_col::String = "champs_deid" #column that uniquely identifies a death
 
     delim::Char = ','
     quotechar::Char = '"'
@@ -78,6 +79,15 @@ Base.@kwdef struct CHAMPSSource <: AbstractSource
     ethicsfolder::String = "Ethics"
     ethics::Dict{String,Vector{String}} = Dict("Emory" => ["ref1", "IRB1.pdf"], "Emory" => ["ref2", "IRB2.pdf"],
         "Country" => ["ref3", "IRB3.pdf"])
+    # Data dictionaries
+    domain_name::String = "CHAMPS"
+    domain_description::String = "Raw CHAMPS level-2 deidentified data"
+    datadictionaries::Vector{String} = ["Format_CHAMPS_deid_basic_demographics", 
+                                        "Format_CHAMPS_deid_verbal_autopsy", 
+                                        "Format_CHAMPS_deid_decode_results",
+                                        "Format_CHAMPS_deid_tac_results", 
+                                        "Format_CHAMPS_deid_lab_results"]
+    tac_vocabulary::String = "CHAMPS_deid_tac_vocabulary.xlsx"
 end
 
 Base.@kwdef struct COMSASource <: AbstractSource
@@ -88,6 +98,8 @@ Base.@kwdef struct COMSASource <: AbstractSource
     site_col::String = "provincia"
     country_col::String = ""
     country_iso2::String = "MW"
+    id_col::String = "comsa_id" #column that uniquely identifies a death
+
     delim::Char = ','
     quotechar::Char = '"'
     dateformat::String = "dd-u-yyyy" #"mmm dd, yyyy"
@@ -116,6 +128,11 @@ Base.@kwdef struct COMSASource <: AbstractSource
     ethics::Dict{String,Vector{String}} = Dict("National Health Bioethics Committee of Mozambique" => ["REF 608/CNBS/17", "IRB1.pdf"],
         "Johns Hopkins Bloomberg School of Public Health" => ["IRB#7867", "IRB2.pdf"])
 
+    # Data dictionaries
+    domain_name::String = "COMSA"
+    domain_description::String = "COMSA verbal autopsy dictionary"
+    datadictionaries::Vector{String} = ["Format_Comsa_WHO_VA_20230308"]
+    tac_vocabulary::String = ""
 end
 
 # Ok to use a general struct if assume intermediate dictionaries Format_xx.csv given
@@ -204,28 +221,30 @@ end
 Step 2: 
 Ingest data dictionaries, add variables and vocabularies
 """
-function ingest_dictionary(dict::AbstractDictionary, dbpath::String, dbname::String, dictionarypath::String; sqlite=true)
+function ingest_dictionary(source::AbstractSource, dbpath::String, dbname::String, dictionarypath::String; sqlite=true)
     db = opendatabase(dbpath, dbname; sqlite)
 
     try
         DBInterface.transaction(db) do
 
-        domain = add_domain(db, dict.domain_name, dict.domain_name)
+            domain = add_domain(db, source.domain_name, source.domain_description)
 
-        # Add variables
-        for filename in dict.dictionaries
-            variables = read_variables(dict, dictionarypath, filename)
-            add_variables(variables, db, domain)
-            println("Variables from $filename ingested.")
-        end
+            # Add variables
+            for filename in source.dictionaries
+                variables = read_variables(source, dictionarypath, filename)
+                add_variables(variables, db, domain)
+                println("Variables from $filename ingested.")
+            end
 
-        # Mark key fields for easier reference later
-        row = lookup_variables(db, dict.id_col, domain)
-        DBInterface.execute(db, "UPDATE variables SET keyrole = 'id' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
+            # Mark key fields for easier reference later
+            row = lookup_variables(db, source.id_col, domain)
+            DBInterface.execute(db, "UPDATE variables SET keyrole = 'id' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
 
-        row = lookup_variables(db, dict.site_col, domain)
-        DBInterface.execute(db, "UPDATE variables SET keyrole = 'site_name' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
+            row = lookup_variables(db, source.site_col, domain)
+            DBInterface.execute(db, "UPDATE variables SET keyrole = 'site_name' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
 
+            #Add vocabularies for TAC results with multi-gene
+            ingest_tac_vocabulary(source)
         end
         return nothing
     finally
@@ -233,6 +252,11 @@ function ingest_dictionary(dict::AbstractDictionary, dbpath::String, dbname::Str
     end
 end
 
+function ingest_tac_vocabulary(source::AbstractSource, db, datapath)
+    domain_id = get_domain(db, source.domain_name)
+    xf = XLSX.readxlsx(joinpath(datapath, source.name, source.datafolder, source.tac_vocabulary))
+    pathogencode = XLSX.readtable(file, XLSX.sheetnames(xf)[1]) |> DataFrame
+end
 
 """
 Step 3: 
@@ -692,9 +716,8 @@ This function ingets vocabulary for CHAMPS tac result
 tac_vocabulary: CHAMPS_deid_tac_vocabulary.xlsx created from CHAMPS data description, 
 first sheet include pathogen and multi-gene result code, rest include assay pattern and corresponding pathogen result label.
 """
-function ingest_voc_CHAMPSMITS(dbpath::String, dbname::String, datapath::String, source::String, datafolder::String, tac_vocabulary::String)
+function ingest_voc_CHAMPSMITS(db, datapath::String, source::String, datafolder::String, tac_vocabulary::String)
 
-    db = opendatabase(dbpath, dbname)
     domain_id = get_domain(db, source)
 
     # Read MITS vocabulary xlsx 
@@ -782,10 +805,10 @@ Read a csv file listing variables, variable descriptions and data types in a dat
 
 """
 
-function read_variables(dict::AbstractDictionary, dictionarypath::String, dictionaryname::String)
+function read_variables(source::AbstractSource, dictionarypath::String, dictionaryname::String)
 
-    df = read_data(DocCSV(joinpath(dictionarypath, "$(dict.domain_name)"), dictionaryname,
-        dict.delim, dict.quotechar, dict.dateformat, dict.decimal))
+    df = read_data(DocCSV(joinpath(dictionarypath, "$(source.domain_name)"), dictionaryname,
+        source.delim, source.quotechar, source.dateformat, source.decimal))
 
     vocabularies = Vector{Union{Vocabulary,Missing}}()
     for row in eachrow(df)
