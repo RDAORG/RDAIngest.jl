@@ -1,7 +1,7 @@
 # Reference Death Archive (RDA)
-The Reference Death Archive (RDA) project has been specifically designed to cater to users of the Verbal Autopsy HDSS dataset. RDA's primary objective is to streamline and automate the process of ingesting Verbal Autopsy data into the core data archive while facilitating its conversion to the ICD (International Classification of Diseases) standards through the interVA and inSilico VA systems.
+The Reference Death Archive (RDA) project has been specifically designed to cater to users of the Verbal Autopsy HDSS dataset. RDA's primary objective is to streamline and automate the process of ingesting Verbal Autopsy data into the core data archive while facilitating its conversion to the ICD (International Classification of Diseases) standards through the InterVA and inSilico VA systems.
 
-RDA is engineered using Julia code, ensuring consistency and rapid data processing. Its versatility makes it accessible and beneficial for a wide range of Verbal Autopsy users, simplifying the otherwise complex data management tasks.
+RDA is engineered using Julia code and SQLite, ensuring consistency and rapid data processing. Its versatility makes it accessible and beneficial for a wide range of Verbal Autopsy users, simplifying the otherwise complex data management tasks.
 
 This documentation serves as a comprehensive guide to understanding the key structures of the RDA data archive system and the relationships between key variables. For a deeper dive into the specifics of each module, you'll find more detailed information provided separately.
 
@@ -11,7 +11,7 @@ This documentation serves as a comprehensive guide to understanding the key stru
 
 ## Multiple Sources Death Registered Data
 
-The utilization of data from various geographical locations or the strategic design of multi-site studies can significantly enhance the representational accuracy of a given region. This approach leads to the establishment of an integrated Decision Support System (DSS)-sample vital registration system, serving as a cost-effective foundational data collection platform. This platform not only achieves national representativeness but also provides a detailed perspective at the regional level, enabling in-depth research investigations.
+The utilization of data from various geographical locations or the strategic design of multi-site studies can significantly enhance the representational accuracy of a given region. This approach leads to the establishment of an integrated Decision Support System (DSS)-sample vital registration system, serving as a cost-effective foundational data collection platform. This platform not only achieves international representativeness but also provides a detailed perspective at the regional level, enabling in-depth research investigations.
 
 To uphold data integrity and distinguish between individual sites, a unique identifier is assigned to each site. This identifier is consistently applied across all primary data tables within the Reference Death Archive (RDA), ensuring a clear demarcation between the primary data of different sites.
 
@@ -27,7 +27,7 @@ The primary aim of this project is to achieve the following:
 
 ### 1. Data Structure & Scheme
 The conceptual model of the *Reference Death Archive* is presented in Figure 1.
-![Fig 1: RDA Data Archiving Schema ](RDA_Datamodel_V2.0.png)
+![Fig 1: RDA Data Archiving Schema](RDA_Datamodel_V2.0.png)
 
 This diagram provides an overview of how different tables are interconnected within the system. In the diagram, tables are depicted as boxes, with their names placed at the upper section of each box. Field names are located in the lower section. Primary keys are indicated with "key" signs next to the relevant items, and relationships between tables are depicted using "crows feet" lines. These lines connect tables based on foreign key relationships, with the many side of the relationship represented by the crow's foot symbol. Additionally, each variable is associated with a defined data type to ensure data consistency.
 
@@ -35,26 +35,25 @@ This diagram provides an overview of how different tables are interconnected wit
 
 ### 2. Sources
 
+- The `source_id` in the *sources* table serves as the primary key, uniquely identifying each data source.
 
-- The source_id in the Sources table serves as the primary key, uniquely identifying each data source.
+- In the *sites* table, the `source_id` serves as a foreign key variable, establishing a link between the sources of data and the specific sites where the data originates. Additionally, `site_id` is designated as the primary key within the *sites* table.
 
-- In the Sites table, the source_id serves as a foreign key variable, establishing a link between the sources of data and the specific sites where the data originates. Additionally, site_id is designated as the primary key within the Sites table.
-
-- These source_id and site_id identifiers serve as the foundational starting points for collecting death data and managing data ingestion events, facilitating the seamless integration of data into the system.
+- These `source_id` and `site_id` identifiers serve as the foundational starting points for collecting death data and managing data ingestion events, facilitating the seamless integration of data into the system.
 
 All the relevant origin of the data is elucidated through the following tables:
-
 
 | Table Name              | Description                                                                   |
 |:----------------------- | :---------------------------------------------------------------------------- |
 | sources                 | The entity responsible for distributing the data                              |
 | sites                   | The surveillance site whre the data collection (or death) occured             |
 
+
 ### 3. Data Collection (Protocols & Ethics)
 
-- Within the data architecture, the Site Protocols table establishes a many-to-many relationship. This connection is achieved through the use of a protocol_id foreign key, which links to the Protocol table. The Protocol table, in turn, includes an ethics_id (foreign key) to establish a connection with the Ethics table. This intricate web of relationships forms the foundation for understanding data collection protocols and ethical approvals.
+- Within the data architecture, the *site_protocols* table establishes a many-to-many relationship. This connection is achieved through the use of a `protocol_id` foreign key, which links to the *protocol* table. The *protocol* table, in turn, includes an `ethics_id` (foreign key) to establish a connection with the *ethics* table. This intricate web of relationships forms the foundation for understanding data collection protocols and ethical approvals.
 
-The detailed information pertaining to data collection protocols and ethical approvals is comprehensively documented in the following tables:
+The detailed information pertaining to data collection protocols and ethical approvals is documented in the following tables:
 
 
 | Table Name              | Description                                                                   |
@@ -66,13 +65,13 @@ The detailed information pertaining to data collection protocols and ethical app
 | ethics_documents        | Documents describing the ethical approval                                     |
 
 ### 4. Data collection instruments
-- The Protocol Instruments table plays a pivotal role in establishing connections. It links to the Instruments table using the instrument_id as a foreign key. Simultaneously, the instrument_id in the Instruments table serves as the primary key. This connection extends further to the Instrument Documents table and the Instrument Datasets table.
+- The *protocol_instruments* table plays a pivotal role in establishing connections. It links to the *instruments* table using the `instrument_id` as a foreign key. Simultaneously, the `instrument_id` in the *instruments* table serves as the primary key. This connection extends further to the *instrument_documents* table and the *instrument_datasets* table.
 
-- In the Instrument Documents table, the instrument_id is utilized as a foreign key.
+- In the *instrument_documents* table, the `instrument_id` is utilized as a foreign key.
 
-- Similarly, the Instrument Datasets table also employs the instrument_id as a foreign key. This linkage sets the stage for future connections with datasets and variable maps, which will be elaborated upon in subsequent steps.
+- Similarly, the *instrument_datasets* table also employs the `instrument_id` as a foreign key. This linkage sets the stage for future connections with datasets and variable maps, which will be elaborated upon in subsequent steps.
 
-A comprehensive overview of the data collection instruments is provided in the following tables:
+An overview of the data collection instruments is provided in the following tables:
 
 | Table Name              | Description                                                                   |
 |:----------------------- | :---------------------------------------------------------------------------- |
@@ -83,13 +82,13 @@ A comprehensive overview of the data collection instruments is provided in the f
 
 ### 5. Datasets
 
-- From the Sources to Data Ingestions, a connection is established through the data_ingestion_id, which is linked with the dataset_id. Additionally, the instrument_id serves as a foreign key in the Datasets table, where dataset_id is the primary key.
+- From the *sources* to *data_ingestions*, a connection is established through the `data_ingestion_id`, which is linked with the dataset_id. Additionally, the `instrument_id` serves as a foreign key in the *datasets* table, where `dataset_id` is the primary key.
 
-- The Datasets table also forms relationships with Data Rows and Dataset Variables, using dataset_id as a foreign key.
+- The *datasets* table also forms relationships with *datarows* and *dataset_variables*, using `dataset_id` as a foreign key.
 
-- Moving from Data Rows, the row_id, originally assigned as a foreign key from the Death Rows, is collected. These rows are subsequently translated into data, with the row_id serving as a foreign key.
+- Moving from *datarows*, the `row_id`, originally assigned as a foreign key from the Death Rows, is collected. These rows are subsequently translated into data, with the `row_id` serving as a foreign key.
 
-- Additionally, the Data Rows table contains a variable_id, which can be further related to Variables, a topic that will be covered in the next section.
+- Additionally, the *datarows* table contains a `variable_id`, which can be further related to *variables*, a topic that will be covered in the next section.
 
 The actual data is stored and organized within the following tables:
 
@@ -102,13 +101,13 @@ The actual data is stored and organized within the following tables:
 
 ### 6. Variables and mappings
 
-- The Variables table is linked to the variable_id as a foreign key from both the Dataset and Data tables. These variables are primarily sourced from the sites providing data. Additionally, they are linked to their respective Domains tables using the domain_id as a foreign key.
+- The *variables* table is linked to the `variable_id` as a foreign key from both the *dataset_variables* and *data* tables. These variables are primarily sourced from the sites providing data. Additionally, they are linked to their respective *domains* tables using the `domain_id` as a foreign key.
 
-- By utilizing the vocabulary_id as a foreign key, variables can be linked to Vocabularies and Vocabulary Items.
+- By utilizing the `vocabulary_id` as a foreign key, *variables* can be linked to *vocabularies* and *vocabulary_items*.
 
-- The connection extends to the Variable Maps tables, originating from instruments, and Variable Mappings from the CDC sites/standardized variables. These mappings allow for the conversion of variable mappings to variables using destination_id, from_id, and prerequisite_id to reference the variable ID.
+- The connection extends to the *variablemaps* tables, originating from instruments, and *variablemappings* from the CDC sites/standardized variables. These mappings allow for the conversion of variable mappings to variables using `destination_id`, `from_id`, and `prerequisite_id` to reference the variable ID.
 
-- Moreover, variables employ a value_type_id as a foreign link to the Value Types table. This relationship provides insight into the value type of each variable, maintaining consistency with data types.
+- Moreover, variables employ a `value_type_id` as a foreign link to the *value_types* table. This relationship provides insight into the value type of each variable, maintaining consistency with data types.
 
 The tables that describe the variables representing the data within the dataset are as follows:
 
@@ -126,9 +125,9 @@ The tables that describe the variables representing the data within the dataset 
 
 ### 7. Transformations
 
-- During the data ingestion process, transformations and their corresponding transformation_id and ingest_id are established. These transformations are directly linked to the dataset_id in the Datasets table.
+- During the data ingestion process, transformations and their corresponding `transformation_id` and `ingest_id` are established. These transformations are directly linked to the `dataset_id` in the Datasets table.
 
-- The transformation_id interacts with both the Transformation Inputs and Transformation Outputs tables, both of which are connected to the dataset_id. However, the data for these interactions is sourced from the Transformations table, where the transformation_id serves as a foreign key.
+- The transformation_id interacts with both the *transformation_inputs* and *transformation_outputs* tables, both of which are connected to the `dataset_id`. However, the data for these interactions is sourced from the *transformations* table, where the `transformation_id` serves as a foreign key.
 
 An instance of data ingestion into the Reference Death Archive is detailed through the following tables:
 
