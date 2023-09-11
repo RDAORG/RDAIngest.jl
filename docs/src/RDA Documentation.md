@@ -39,7 +39,7 @@ This diagram provides an overview of how different tables are interconnected wit
 
 - In the *sites* table, the `source_id` serves as a foreign key variable, establishing a link between the sources of data and the specific sites where the data originates. Additionally, `site_id` is designated as the primary key within the *sites* table.
 
-- These `source_id` and `site_id` identifiers serve as the foundational starting points for collecting death data and managing data ingestion events, facilitating the seamless integration of data into the system.
+- These `source_id` and `site_id` identifiers serve as the foundational starting points for collecting death data and managing data ingestion events, facilitating the seamless ingestions of data into the system.
 
 All the relevant origin of the data is elucidated through the following tables:
 
@@ -51,7 +51,7 @@ All the relevant origin of the data is elucidated through the following tables:
 
 ### 3. Data Collection (Protocols & Ethics)
 
-- Within the data architecture, the *site_protocols* table establishes a many-to-many relationship. This connection is achieved through the use of a `protocol_id` foreign key, which links to the *protocol* table. The *protocol* table, in turn, includes an `ethics_id` (foreign key) to establish a connection with the *ethics* table. This intricate web of relationships forms the foundation for understanding data collection protocols and ethical approvals.
+- Within the data architecture, the *site_protocols* table establishes a many-to-many relationship. This connection is achieved through the use of a `protocol_id` foreign key, which links to the *protocols* table. The *protocols* table, in turn, includes an `ethics_id` (foreign key) to establish a connection with the *ethics* table. Utilizing `ethics_id` as a foreign key variable, the documentation further details the *ethics_documents* table, while `protocol_id` serves as the foreign key variable for documenting the *protocol_documents* table. 
 
 The detailed information pertaining to data collection protocols and ethical approvals is documented in the following tables:
 
@@ -64,8 +64,8 @@ The detailed information pertaining to data collection protocols and ethical app
 | ethics                  | An ethics approval for data collection                                        |
 | ethics_documents        | Documents describing the ethical approval                                     |
 
-### 4. Data collection instruments
-- The *protocol_instruments* table plays a pivotal role in establishing connections. It links to the *instruments* table using the `instrument_id` as a foreign key. Simultaneously, the `instrument_id` in the *instruments* table serves as the primary key. This connection extends further to the *instrument_documents* table and the *instrument_datasets* table.
+### 4. Data collection (Instruments)
+- The *protocol_instruments* table plays a pivotal role in establishing connections between protocols and instruments. It links to the *instruments* table using the `instrument_id` as a foreign key. Simultaneously, the `instrument_id` in the *instruments* table serves as the primary key. This connection extends further to the *instrument_documents* table and the *instrument_datasets* table.
 
 - In the *instrument_documents* table, the `instrument_id` is utilized as a foreign key.
 
@@ -82,7 +82,7 @@ An overview of the data collection instruments is provided in the following tabl
 
 ### 5. Datasets
 
-- From the *sources* to *data_ingestions*, a connection is established through the `data_ingestion_id`, which is linked with the dataset_id. Additionally, the `instrument_id` serves as a foreign key in the *datasets* table, where `dataset_id` is the primary key.
+- From the *sources* to *data_ingestions*, a connection is established through the `data_ingestion_id`, which is linked with the `dataset_id`. Additionally, the `instrument_id` serves as a foreign key in the *datasets* table, where `dataset_id` is the primary key.
 
 - The *datasets* table also forms relationships with *datarows* and *dataset_variables*, using `dataset_id` as a foreign key.
 
@@ -127,7 +127,7 @@ The tables that describe the variables representing the data within the dataset 
 
 - During the data ingestion process, transformations and their corresponding `transformation_id` and `ingest_id` are established. These transformations are directly linked to the `dataset_id` in the Datasets table.
 
-- The transformation_id interacts with both the *transformation_inputs* and *transformation_outputs* tables, both of which are connected to the `dataset_id`. However, the data for these interactions is sourced from the *transformations* table, where the `transformation_id` serves as a foreign key.
+- The `transformation_id` interacts with both the *transformation_inputs* and *transformation_outputs* tables, both of which are connected to the `dataset_id`. However, the data for these interactions is sourced from the *transformations* table, where the `transformation_id` serves as a foreign key.
 
 An instance of data ingestion into the Reference Death Archive is detailed through the following tables:
 
