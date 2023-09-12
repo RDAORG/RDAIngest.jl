@@ -216,12 +216,12 @@ function ingest_source(source::AbstractSource, dbpath::String, dbname::String,
 end
 
 """
-    ingest_dictionary(dict::AbstractDictionary, dbpath::String, dbname::String, dictionarypath::String; sqlite = true)
+    ingest_dictionary(source::AbstractSource, dbpath::String, dbname::String, dictionarypath::String, datapath::String; sqlite=true)
 
 Step 2: 
 Ingest data dictionaries, add variables and vocabularies
 """
-function ingest_dictionary(source::AbstractSource, dbpath::String, dbname::String, dictionarypath::String; sqlite=true)
+function ingest_dictionary(source::AbstractSource, dbpath::String, dbname::String, dictionarypath::String, datapath::String; sqlite=true)
     db = opendatabase(dbpath, dbname; sqlite)
 
     try
@@ -244,7 +244,7 @@ function ingest_dictionary(source::AbstractSource, dbpath::String, dbname::Strin
             DBInterface.execute(db, "UPDATE variables SET keyrole = 'site_name' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
 
             #Add vocabularies for TAC results with multi-gene
-            ingest_tac_vocabulary(source)
+            ingest_tac_vocabulary(source, db, datapath)
         end
         return nothing
     finally
@@ -255,7 +255,28 @@ end
 function ingest_tac_vocabulary(source::AbstractSource, db, datapath)
     domain_id = get_domain(db, source.domain_name)
     xf = XLSX.readxlsx(joinpath(datapath, source.name, source.datafolder, source.tac_vocabulary))
-    pathogencode = XLSX.readtable(file, XLSX.sheetnames(xf)[1]) |> DataFrame
+    pathogens = pathogens = XLSX.gettable(xf[1]) |> DataFrame
+    insertcols!(pathogens, 1, :vocabulary_id => 0) #to record saved vocabulary
+    select!(pathogens, :vocabulary_id, :Pathogen => name, Symbol("Multi-target result code") => :description)
+    # Add vocabulary for each pathogen
+    for row in eachrow(pathogens)
+        vocab_id = insertwithidentity(db, "vocabularies", ["name", "description"], [row.name, row.description], "vocabulary_id")
+        row.vocabulary_id = vocab_id
+    end
+    # Add vocabulary items
+    stmt = prepareinsertstatement(db, "vocabulary_items", ["vocabulary_id", "value", "code", "description"])
+    for row in eachrow(pathogens)
+        #get details for each pathogen in sheet with the pathogen name
+        pathogen_details = XLSX.gettable(xf[row.name]) |> DataFrame 
+        #Group by Interpretation to get unique codes
+        
+        for row1 in eachrow(pathogen_details)
+            desc = replace(join([join([names(row1)[i], row2[i]], ":") for i in 1:(length(row1)-1)], ";"), " " => "")
+            code = row2.Interpretation
+
+            DBInterface.execute(stmt, [row.vocabulary_id, row1.value, row1.code, row1.description])
+        end
+    end
 end
 
 """

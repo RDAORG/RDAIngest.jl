@@ -25,19 +25,11 @@ source = CHAMPSSource()
 
 #
 # Step 2: Ingest data dictionaries, add variables and vocabularies
-CHAMPSdict = AbstractDictionary(
-    domain_name="CHAMPS",
-    domain_description = "Raw CHAMPS level-2 deidentified data",
-    dictionaries=["Format_CHAMPS_deid_basic_demographics", 
-    "Format_CHAMPS_deid_verbal_autopsy", 
-    "Format_CHAMPS_deid_decode_results",
-    "Format_CHAMPS_deid_tac_results", 
-    "Format_CHAMPS_deid_lab_results"],
-    id_col = "champs_deid", site_col = "site_iso_code"
-    )
 
-@time ingest_dictionary(CHAMPSdict, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_DICTIONARY_PATH"])
-@time ingest_dictionary(CHAMPSdict, ENV["RDA_SERVER"], ENV["RDA_DBNAME"], ENV["DATA_DICTIONARY_PATH"], sqlite = false)
+@time ingest_dictionary(source, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_DICTIONARY_PATH"], 
+                                    ENV["DATA_INGEST_PATH"], sqlite = true)
+@time ingest_dictionary(source, ENV["RDA_SERVER"], ENV["RDA_DBNAME"], ENV["DATA_DICTIONARY_PATH"], 
+                                    ENV["DATA_INGEST_PATH"], sqlite=false)
 
 #
 # For CHAMPS, add vocabularies for TAC results with multi-gene
