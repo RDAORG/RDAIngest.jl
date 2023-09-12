@@ -82,11 +82,11 @@ Base.@kwdef struct CHAMPSSource <: AbstractSource
     # Data dictionaries
     domain_name::String = "CHAMPS"
     domain_description::String = "Raw CHAMPS level-2 deidentified data"
-    datadictionaries::Vector{String} = ["Format_CHAMPS_deid_basic_demographics", 
-                                        "Format_CHAMPS_deid_verbal_autopsy", 
-                                        "Format_CHAMPS_deid_decode_results",
-                                        "Format_CHAMPS_deid_tac_results", 
-                                        "Format_CHAMPS_deid_lab_results"]
+    datadictionaries::Vector{String} = ["Format_CHAMPS_deid_basic_demographics",
+        "Format_CHAMPS_deid_verbal_autopsy",
+        "Format_CHAMPS_deid_decode_results",
+        "Format_CHAMPS_deid_tac_results",
+        "Format_CHAMPS_deid_lab_results"]
     tac_vocabulary::String = "CHAMPS_deid_tac_vocabulary.xlsx"
 end
 
@@ -257,23 +257,23 @@ function ingest_tac_vocabulary(source::AbstractSource, db, datapath)
     xf = XLSX.readxlsx(joinpath(datapath, source.name, source.datafolder, source.tac_vocabulary))
     pathogens = pathogens = XLSX.gettable(xf[1]) |> DataFrame
     insertcols!(pathogens, 1, :vocabulary_id => 0) #to record saved vocabulary
-    select!(pathogens, :vocabulary_id, :Pathogen => name, Symbol("Multi-target result code") => :description)
+    select!(pathogens, :vocabulary_id, :Pathogen => :name, Symbol("Multi-target result code") => :description)
     # Add vocabulary for each pathogen
     for row in eachrow(pathogens)
         vocab_id = insertwithidentity(db, "vocabularies", ["name", "description"], [row.name, row.description], "vocabulary_id")
         row.vocabulary_id = vocab_id
+        updatevariable_vocabulary(db, "_" * row.name, domain_id, vocab_id)
     end
     # Add vocabulary items
     stmt = prepareinsertstatement(db, "vocabulary_items", ["vocabulary_id", "value", "code", "description"])
     for row in eachrow(pathogens)
         #get details for each pathogen in sheet with the pathogen name
-        pathogen_details = XLSX.gettable(xf[row.name]) |> DataFrame 
+        pathogen_details = XLSX.gettable(xf[row.name]) |> DataFrame
         #Group by Interpretation to get unique codes
-        
-        for row1 in eachrow(pathogen_details)
-            desc = replace(join([join([names(row1)[i], row2[i]], ":") for i in 1:(length(row1)-1)], ";"), " " => "")
-            code = row2.Interpretation
-
+        select!(pathogen_details, :Interpretation => ByRow(x -> strip(x)) => :code, AsTable(Not(:Interpretation)) =>
+            ByRow(x -> replace(join([join([keys(x)[i], values(x)[i]], ":") for i in 1:length(x)], ";"), " " => "")) => :values)
+        items = combine(groupby(pathogen_details, :code), groupindices => :value, :values => (x -> join(x, "|")) => :description)
+        for row1 in eachrow(items)
             DBInterface.execute(stmt, [row.vocabulary_id, row1.value, row1.code, row1.description])
         end
     end
@@ -727,105 +727,12 @@ function add_vocabulary(db, vocabulary::Vocabulary)
     return id
 end
 
-
-
-"""
-    ingest_voc_CHAMPSMITS(dbpath::String, dbname::String, datapath::String, source::String, datafolder::String, tac_vocabulary::String)
-
-This function ingets vocabulary for CHAMPS tac result 
-
-tac_vocabulary: CHAMPS_deid_tac_vocabulary.xlsx created from CHAMPS data description, 
-first sheet include pathogen and multi-gene result code, rest include assay pattern and corresponding pathogen result label.
-"""
-function ingest_voc_CHAMPSMITS(db, datapath::String, source::String, datafolder::String, tac_vocabulary::String)
-
-    domain_id = get_domain(db, source)
-
-    # Read MITS vocabulary xlsx 
-    file = joinpath(datapath, source, datafolder, tac_vocabulary)
-    xf = XLSX.readxlsx(file)
-
-    pathogencode = XLSX.readtable(file, XLSX.sheetnames(xf)[1]) |> DataFrame
-
-    # Get vocabularies
-    sql = "SELECT vocabulary_id FROM vocabularies"
-    last_row_id = DataFrame(DBInterface.execute(db, sql)).vocabulary_id[end]
-
-    tac_voc = select(pathogencode,
-        [] => Returns((1:size(pathogencode, 1)) .+ last_row_id) => :vocabulary_id,
-        :Pathogen => :name,
-        Symbol("Multi-target result code") => :description)
-
-    #SQLite.transaction(db)
-
-    # Add vocabulary ids to variables table    
-    for row in eachrow(tac_voc)
-        pathogen = string("_", "$(row.name)")
-        sql = """
-                UPDATE variables
-                SET vocabulary_id = IFNULL(vocabulary_id, $(row.vocabulary_id))
-                WHERE name LIKE '%$(pathogen)%' AND domain_id = $domain_id;
-                """
-        DBInterface.execute(db, sql)
-    end
-
-    # Add vocabularies to vocabularies item
-    sql = """
-        INSERT INTO vocabularies (name, description)
-        VALUES ( @name, @desc)
-        """
-    stmt = DBInterface.prepare(db, sql)
-    for row in eachrow(tac_voc)
-        DBInterface.execute(stmt, (
-            name=row.name, desc=row.description))
-    end
-
-    #SQLite.commit(db)
-
-    # Get vocabulary item, description reflects combined assay result
-    tac_voc_item = DataFrame(vocabulary_id=Int64[], value=Int64[],
-        code=String[], description=String[])
-
-    for row1 in eachrow(pathogencode)
-        voc_id = tac_voc.vocabulary_id[tac_voc.name.==row1.Pathogen]
-        ptg_xf = XLSX.readtable(file, row1.Pathogen) |> DataFrame
-        value = 0
-        for row2 in eachrow(ptg_xf)
-            desc = replace(join([join([names(row2)[i], row2[i]], ":") for i in 1:(length(row2)-1)], ";"), " " => "")
-            code = row2.Interpretation
-
-            # If code is new, add new row, otherwise update existing description
-            if in(code, tac_voc_item.code[tac_voc_item.vocabulary_id.==voc_id])
-                desc_old = tac_voc_item.description[(tac_voc_item.vocabulary_id.==voc_id).&&(tac_voc_item.code.==code)][1]
-                tac_voc_item.description[(tac_voc_item.vocabulary_id.==voc_id).&&(tac_voc_item.code.==code)] .= join([desc_old, desc], "|")
-            else
-                value = value + 1
-                tac_voc_item = vcat(tac_voc_item, DataFrame(vocabulary_id=voc_id, value=value, code=code, description=desc))
-            end
-        end
-    end
-
-    # Add vocabulary items to vocabulary_items table
-    sql = """
-            INSERT INTO vocabulary_items (vocabulary_id, value, code, description)
-            VALUES (@vocabulary_id, @value, @code, @desc)
-            """
-    stmt = DBInterface.prepare(db, sql)
-    for row in eachrow(tac_voc_item)
-        DBInterface.execute(stmt, (vocabulary_id=row.vocabulary_id,
-            value=row.value, code=row.code, desc=row.description))
-    end
-
-    return nothing
-end
-
 """
 read_variables(dict::AbstractDictionary, dictionarypath::String, dictionaryname::String)
 
 Read a csv file listing variables, variable descriptions and data types in a dataset.
 
 """
-
 function read_variables(source::AbstractSource, dictionarypath::String, dictionaryname::String)
 
     df = read_data(DocCSV(joinpath(dictionarypath, "$(source.domain_name)"), dictionaryname,

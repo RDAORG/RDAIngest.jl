@@ -641,6 +641,15 @@ function identityinsertoff(db::ODBC.Connection, table::String)
     DBInterface.execute(db, sql)
     return nothing
 end
+function updatevariable_vocabulary(db::DBInterface.Connection, name, domain_id, vocabulary_id)
+    sql = """
+    UPDATE variables
+      SET vocabulary_id = $vocabulary_id
+    WHERE name LIKE '%$name%'
+      AND domain_id = $domain_id
+    """
+    DBInterface.execute(db,sql)
+end
 function createvariables(db::ODBC.Connection)
     sql = raw"""
     CREATE TABLE [value_types] (
