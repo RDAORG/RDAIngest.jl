@@ -151,33 +151,24 @@ Base.@kwdef struct AbstractDictionary
 end
 
 Base.@kwdef struct Ingest
-    source_name::String
-    datafolder::String = "De_identified_data"
+    source::AbstractSource
 
     # Deaths data
     death_file::String = ""
-    death_idcol::String = ""
-    site_col::String = ""
 
     # Other datasets matching to deaths
-    datasets::Dict{String,String} # Dictionary description => filename
-    delim::Char = ','
-    quotechar::Char = '"'
-    dateformat::String = "yyyy-mm-dd"
-    decimal::Char = '.'
+    datasets::Dict{String,String} # Dataset name => description
 
-    # Matching instruments for instrument filename => datasets filename
+    # Matching instruments to data sets Dataset name => instrument filename
     datainstruments::Dict{String,String}
 
     # Metadata for ingestion and transformation
     ingest_desc::String = "Ingest raw de-identified data"
-    #transform_type::Int64 = 1
-    #transform_status::Int64 = 1
+
     transform_desc::String = "Ingest raw de-identified data"
     code_reference::String = "RDAIngest"
     author::String = ""
-    #date::Date = today()    
-end
+ nd
 
 """
 Step 1: 
@@ -225,27 +216,28 @@ function ingest_dictionary(source::AbstractSource, dbpath::String, dbname::Strin
     db = opendatabase(dbpath, dbname; sqlite)
 
     try
-        DBInterface.transaction(db) do
+        #        DBInterface.transaction(db) do
+        println("Ingest dictionaries for $(source.name). sqlite = $sqlite")
+        domain = add_domain(db, source.domain_name, source.domain_description)
 
-            domain = add_domain(db, source.domain_name, source.domain_description)
-
-            # Add variables
-            for filename in source.dictionaries
-                variables = read_variables(source, dictionarypath, filename)
-                add_variables(variables, db, domain)
-                println("Variables from $filename ingested.")
-            end
-
-            # Mark key fields for easier reference later
-            row = lookup_variables(db, source.id_col, domain)
-            DBInterface.execute(db, "UPDATE variables SET keyrole = 'id' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
-
-            row = lookup_variables(db, source.site_col, domain)
-            DBInterface.execute(db, "UPDATE variables SET keyrole = 'site_name' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
-
-            #Add vocabularies for TAC results with multi-gene
-            ingest_tac_vocabulary(source, db, datapath)
+        # Add variables
+        for filename in source.datadictionaries
+            variables = read_variables(source, dictionarypath, filename)
+            add_variables(variables, db, domain)
+            println("Variables from $filename ingested.")
         end
+
+        # Mark key fields for easier reference later
+        row = lookup_variables(db, source.id_col, domain)
+        DBInterface.execute(db, "UPDATE variables SET keyrole = 'id' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
+
+        row = lookup_variables(db, source.site_col, domain)
+        DBInterface.execute(db, "UPDATE variables SET keyrole = 'site_name' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
+
+        #Add vocabularies for TAC results with multi-gene
+        ingest_tac_vocabulary(source, db, datapath)
+        println("Completed ingest dictionaries for $(source.name).")
+        #        end
         return nothing
     finally
         DBInterface.close!(db)
@@ -253,6 +245,7 @@ function ingest_dictionary(source::AbstractSource, dbpath::String, dbname::Strin
 end
 
 function ingest_tac_vocabulary(source::AbstractSource, db, datapath)
+    println("Ingest tac_vocabularies for $(source.name).")
     domain_id = get_domain(db, source.domain_name)
     xf = XLSX.readxlsx(joinpath(datapath, source.name, source.datafolder, source.tac_vocabulary))
     pathogens = pathogens = XLSX.gettable(xf[1]) |> DataFrame
@@ -273,10 +266,13 @@ function ingest_tac_vocabulary(source::AbstractSource, db, datapath)
         select!(pathogen_details, :Interpretation => ByRow(x -> strip(x)) => :code, AsTable(Not(:Interpretation)) =>
             ByRow(x -> replace(join([join([keys(x)[i], values(x)[i]], ":") for i in 1:length(x)], ";"), " " => "")) => :values)
         items = combine(groupby(pathogen_details, :code), groupindices => :value, :values => (x -> join(x, "|")) => :description)
+        #convert values to string to keep ODBC happy
+        transform!(items, :code => ByRow(x -> String(x)) => :code, :description => ByRow(x -> String(x)) => :description)
         for row1 in eachrow(items)
             DBInterface.execute(stmt, [row.vocabulary_id, row1.value, row1.code, row1.description])
         end
     end
+    println("Completed ingest tac_vocabularies for $(source.name).")
 end
 
 """
@@ -736,8 +732,7 @@ Read a csv file listing variables, variable descriptions and data types in a dat
 function read_variables(source::AbstractSource, dictionarypath::String, dictionaryname::String)
 
     df = read_data(DocCSV(joinpath(dictionarypath, "$(source.domain_name)"), dictionaryname,
-        source.delim, source.quotechar, source.dateformat, source.decimal))
-
+        ';', source.quotechar, source.dateformat, source.decimal)) #dictionaries are delimited by semi-colons, not the default source delimeter
     vocabularies = Vector{Union{Vocabulary,Missing}}()
     for row in eachrow(df)
         if !ismissing(row.Description) && length(lines(row.Description)) > 1

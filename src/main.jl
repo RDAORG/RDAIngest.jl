@@ -24,18 +24,12 @@ source = CHAMPSSource()
 @time ingest_source(source, ENV["RDA_SERVER"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"], sqlite = false)
 
 #
-# Step 2: Ingest data dictionaries, add variables and vocabularies
+# Step 2: Ingest data dictionaries, add variables and vocabularies, including TAC results with multi-gene
 
 @time ingest_dictionary(source, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_DICTIONARY_PATH"], 
                                     ENV["DATA_INGEST_PATH"], sqlite = true)
 @time ingest_dictionary(source, ENV["RDA_SERVER"], ENV["RDA_DBNAME"], ENV["DATA_DICTIONARY_PATH"], 
                                     ENV["DATA_INGEST_PATH"], sqlite=false)
-
-#
-# For CHAMPS, add vocabularies for TAC results with multi-gene
-@time ingest_voc_CHAMPSMITS(ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], 
-                            ENV["DATA_INGEST_PATH"], "CHAMPS", "De_identified_data", 
-                            "CHAMPS_deid_tac_vocabulary.xlsx")
                             
 #=
 # Step 3: Ingest deaths to deathrows, return transformation_id and ingestion_id
