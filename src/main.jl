@@ -31,32 +31,25 @@ source = CHAMPSSource()
 @time ingest_dictionary(source, ENV["RDA_SERVER"], ENV["RDA_DBNAME"], ENV["DATA_DICTIONARY_PATH"], 
                                     ENV["DATA_INGEST_PATH"], sqlite=false)
                             
-#=
+#
 # Step 3: Ingest deaths to deathrows, return transformation_id and ingestion_id
-CHAMPSIngest = Ingest(source_name = "CHAMPS",
-                datafolder = "De_identified_data",
+CHAMPSIngest = Ingest(source = source,
                 death_file = "CHAMPS_deid_basic_demographics",
-                death_idcol = "champs_deid",
-                site_col = "site_iso_code",
                 datasets = Dict("CHAMPS deid basic demographics" => "CHAMPS_deid_basic_demographics", 
                 "CHAMPS deid verbal autopsy" => "CHAMPS_deid_verbal_autopsy", 
                 "CHAMPS deid decode results" => "CHAMPS_deid_decode_results",
                 "CHAMPS deid tac results" => "CHAMPS_deid_tac_results", 
                 "CHAMPS deid lab results" => "CHAMPS_deid_lab_results"
                 ),
-                delim = ',',
-                quotechar = '"',
-                dateformat = "yyyy-mm-dd",
-                decimal = '.',
                 datainstruments = Dict("cdc_93759_DS9.pdf" => "CHAMPS_deid_verbal_autopsy"),
                 ingest_desc = "Raw CHAMPS Level-2 Data accessed 20230518",
                 transform_desc = "Ingest of CHAMPS Level-2 Data",
                 code_reference = "Multiple dispatch testing",
-                author = "YUE CHU"
+                author = "Kobus Herbst; YUE CHU"
                 )
                 
 meta_info = ingest_deaths(CHAMPSIngest, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"])
-
+ #=
 # Step 4: Import datasets, and link datasets to deaths
 
 @time ingest_data(CHAMPSIngest, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"],

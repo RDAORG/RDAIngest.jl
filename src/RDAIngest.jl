@@ -168,7 +168,7 @@ Base.@kwdef struct Ingest
     transform_desc::String = "Ingest raw de-identified data"
     code_reference::String = "RDAIngest"
     author::String = ""
- nd
+end
 
 """
 Step 1: 
@@ -216,28 +216,28 @@ function ingest_dictionary(source::AbstractSource, dbpath::String, dbname::Strin
     db = opendatabase(dbpath, dbname; sqlite)
 
     try
-        #        DBInterface.transaction(db) do
-        println("Ingest dictionaries for $(source.name). sqlite = $sqlite")
-        domain = add_domain(db, source.domain_name, source.domain_description)
+        DBInterface.transaction(db) do
+            println("Ingest dictionaries for $(source.name). sqlite = $sqlite")
+            domain = add_domain(db, source.domain_name, source.domain_description)
 
-        # Add variables
-        for filename in source.datadictionaries
-            variables = read_variables(source, dictionarypath, filename)
-            add_variables(variables, db, domain)
-            println("Variables from $filename ingested.")
+            # Add variables
+            for filename in source.datadictionaries
+                variables = read_variables(source, dictionarypath, filename)
+                add_variables(variables, db, domain)
+                println("Variables from $filename ingested.")
+            end
+
+            # Mark key fields for easier reference later
+            row = lookup_variables(db, source.id_col, domain)
+            DBInterface.execute(db, "UPDATE variables SET keyrole = 'id' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
+
+            row = lookup_variables(db, source.site_col, domain)
+            DBInterface.execute(db, "UPDATE variables SET keyrole = 'site_name' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
+
+            #Add vocabularies for TAC results with multi-gene
+            ingest_tac_vocabulary(source, db, datapath)
+            println("Completed ingest dictionaries for $(source.name).")
         end
-
-        # Mark key fields for easier reference later
-        row = lookup_variables(db, source.id_col, domain)
-        DBInterface.execute(db, "UPDATE variables SET keyrole = 'id' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
-
-        row = lookup_variables(db, source.site_col, domain)
-        DBInterface.execute(db, "UPDATE variables SET keyrole = 'site_name' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
-
-        #Add vocabularies for TAC results with multi-gene
-        ingest_tac_vocabulary(source, db, datapath)
-        println("Completed ingest dictionaries for $(source.name).")
-        #        end
         return nothing
     finally
         DBInterface.close!(db)
@@ -245,7 +245,6 @@ function ingest_dictionary(source::AbstractSource, dbpath::String, dbname::Strin
 end
 
 function ingest_tac_vocabulary(source::AbstractSource, db, datapath)
-    println("Ingest tac_vocabularies for $(source.name).")
     domain_id = get_domain(db, source.domain_name)
     xf = XLSX.readxlsx(joinpath(datapath, source.name, source.datafolder, source.tac_vocabulary))
     pathogens = pathogens = XLSX.gettable(xf[1]) |> DataFrame
@@ -281,13 +280,13 @@ Ingest deaths to deathrows, return transformation_id and ingestion_id
 ingest_deaths(ingest::Ingest, db::SQLite.DB, datapath::String)
 
 """
-function ingest_deaths(ingest::Ingest, dbpath::String, dbname::String, datapath::String)
+function ingest_deaths(ingest::Ingest, dbpath::String, dbname::String, datapath::String; sqlite = true)
     db = opendatabase(dbpath, dbname)
 
     try
-        SQLite.transaction(db)
+        #        DBInterface.transaction(db) do
 
-        source_id = get_source(db, ingest.source_name)
+        source_id = get_source(db, ingest.source.source_name)
 
         # Add ingestion and transformation info
         ingestion_id = add_ingestion(db, source_id, today(), ingest.ingest_desc)
@@ -309,7 +308,7 @@ function ingest_deaths(ingest::Ingest, dbpath::String, dbname::String, datapath:
 
         println("Death data $(ingest.death_file) ingested.")
 
-        SQLite.commit(db)
+        #        end
 
         return Dict("ingestion_id" => ingestion_id,
             "transformation_id" => transformation_id)
