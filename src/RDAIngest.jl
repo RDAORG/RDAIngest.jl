@@ -280,41 +280,36 @@ Ingest deaths to deathrows, return transformation_id and ingestion_id
 ingest_deaths(ingest::Ingest, db::SQLite.DB, datapath::String)
 
 """
-function ingest_deaths(ingest::Ingest, dbpath::String, dbname::String, datapath::String; sqlite = true)
-    db = opendatabase(dbpath, dbname)
+function ingest_deaths(ingest::Ingest, dbpath::String, dbname::String, datapath::String; sqlite=true)
+    db = opendatabase(dbpath, dbname; sqlite)
 
     try
-        #        DBInterface.transaction(db) do
+        DBInterface.transaction(db) do
 
-        source_id = get_source(db, ingest.source.source_name)
+            source_id = get_source(db, ingest.source.name)
 
-        # Add ingestion and transformation info
-        ingestion_id = add_ingestion(db, source_id, today(), ingest.ingest_desc)
-        transformation_id = add_transformation(db, 1, 1, ingest.transform_desc, #type=1, status=1
-            ingest.code_reference, today(), ingest.author)
+            # Add ingestion and transformation info
+            ingestion_id = insertwithidentity(db, "data_ingestions", ["source_id", "date_received", "description"], [source_id, today(), ingest.ingest_desc], "data_ingestion_id")
+            # transformation should not be created for the death ingestion
 
-        # Ingest deaths
-        deaths = read_data(DocCSV(joinpath(datapath, ingest.source_name, ingest.datafolder),
-            ingest.death_file,
-            ingest.delim, ingest.quotechar, ingest.dateformat, ingest.decimal))
+            # Ingest deaths
+            deaths = read_data(DocCSV(joinpath(datapath, ingest.source.name, ingest.source.datafolder),
+                ingest.death_file, ingest.source.delim, ingest.source.quotechar, ingest.source.dateformat, ingest.source.decimal))
+            sites = selectdataframe(db, "sites", ["site_id", "site_name"], ["source_id"], [source_id])
 
-        sites = DBInterface.execute(db, "SELECT * FROM sites WHERE source_id = $source_id") |> DataFrame
-        sitedeaths = innerjoin(transform!(deaths, Symbol(ingest.site_col) => :site_name),
-            sites, on=:site_name, matchmissing=:notequal)
+            sitedeaths = innerjoin(transform!(deaths, Symbol(ingest.source.site_col) => :site_name),
+                sites, on=:site_name, matchmissing=:notequal)
 
-        savedataframe(db, select(sitedeaths, :site_id, Symbol(ingest.death_idcol) => :external_id,
-                [] => Returns(ingestion_id) => :data_ingestion_id, copycols=false),
-            "deaths")
+            savedataframe(db, select(sitedeaths, :site_id, Symbol(ingest.source.id_col) => :external_id,
+                    [] => Returns(ingestion_id) => :data_ingestion_id, copycols=false), "deaths")
+
+        end
 
         println("Death data $(ingest.death_file) ingested.")
-
-        #        end
-
-        return Dict("ingestion_id" => ingestion_id,
-            "transformation_id" => transformation_id)
+        return ingestion_id #, transformation_id
 
     finally
-        close(db)
+        DBInterface.close!(db)
     end
 end
 
@@ -329,13 +324,14 @@ Import datasets, and link datasets to deaths
 # transformation_id and ingestion_id can be from step 3 outputs if ingesting both death and datasets at the same time.
 # If only importing dataset without ingesting deaths, run add_ingestion() and add_transformation() to get new ids.
 """
-function ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::String,
-    transformation_id::Integer, ingestion_id::Integer, death_ingestion_id=nothing)
-    db = opendatabase(dbpath, dbname)
+function ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::String, ingestion_id::Integer; sqlite = true)
+    db = opendatabase(dbpath, dbname; sqlite)
     try
-        source = get_source(db, ingest.source_name)
-        domain = get_domain(db, ingest.source_name)
-        death_idvar = get_variable(db, domain, ingest.death_idcol)
+        source = get_source(db, ingest.source.name)
+        domain = get_domain(db, ingest.source.name)
+        death_idvar = get_variable(db, domain, ingest.source.idcol)
+        transformation_id = insertwithidentity(db, "transformations", ["transformation_type_id", "transformation_status_id", "description", "code_reference", "date_created", "created_by"],
+            [1, 1, ingest.transform_desc, ingest.code_reference, today(), ingest.author], "transformation_id")
 
         for (key, value) in ingest.datasets
 
@@ -355,9 +351,9 @@ function ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::S
                 println("Death data is not part of currrent data ingest $ingestion_id")
                 if death_ingestion_id === nothing
                     death_ingestion_id = get_last_deathingest(db, source)
-                    println("Death ingestion id not specified. By default, use lastest ingested deaths from source $(ingest.source_name) from ingestion id $death_ingestion_id.")
+                    println("Death ingestion id not specified. By default, use lastest ingested deaths from source $(ingest.source.name) from ingestion id $death_ingestion_id.")
                 else
-                    error("Death from source $(ingest.source_name) hasn't been ingested.")
+                    error("Death from source $(ingest.source.name) hasn't been ingested.")
                 end
             else
                 death_ingestion_id = ingestion_id
@@ -799,29 +795,6 @@ function add_transformation_output(db::SQLite.DB, dataset_id, transformation_id)
     return nothing
 end
 
-
-"""
-    add_ingestion(db::SQLite.DB, source_id::Integer, date::Date, description::String)::Integer
-
-Insert a data ingestion into the data_ingestions table and return the data_ingestion_id
-"""
-function add_ingestion(db::SQLite.DB, source_id::Integer, date::Date, description::String)::Integer
-    sql = """
-    INSERT INTO data_ingestions (source_id, date_received, description)
-    VALUES (@source_id, @date, @description)
-    RETURNING *;
-    """
-    stmt = DBInterface.prepare(db, sql)
-    ingest = DBInterface.execute(stmt, (source_id=source_id,
-        date=Dates.format(date, "yyyy-mm-dd"),
-        description=description)) |> DataFrame
-    if nrow(ingest) > 0
-        return ingest[1, :data_ingestion_id]
-    else
-        error("Unable to insert ingestion")
-    end
-end
-
 """
     add_transformation(db::SQLite.DB, type::Integer, status::Integer, description::String, code_reference::String, date_created::Date, created_by::String)
 
@@ -858,7 +831,7 @@ function import_datasets(db::SQLite.DB, datapath::String,
     try
         SQLite.transaction(db)
 
-        data = read_data(DocCSV(joinpath(datapath, ingest.source_name, ingest.datafolder), filename,
+        data = read_data(DocCSV(joinpath(datapath, ingest.source.name, ingest.datafolder), filename,
             ingest.delim, ingest.quotechar, ingest.dateformat, ingest.decimal))
 
         variables = lookup_variables(db, names(data), domain_id)

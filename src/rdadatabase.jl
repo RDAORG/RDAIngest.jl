@@ -217,9 +217,9 @@ function prepareselectstatement(db::ODBC.Connection, table, columns::Vector{Stri
        return DBInterface.prepare(db, select_clause * where_clause)
    end
 end
-function selectdataframe(db, table, columns::Vector{String}, filter::Vector{String}, filtervalues::Vector{Any})
+function selectdataframe(db::DBInterface.Connection, table::String, columns::Vector{String}, filter::Vector{String}, filtervalues::DBInterface.StatementParams)::AbstractDataFrame
     stmt = prepareselectstatement(db, table, columns, filter)
-    return DBInterface.execute(db, stmt, filtervalues) |> DataFrame
+    return DBInterface.execute(stmt, filtervalues) |> DataFrame
 end
 function selectsourcesites(db, source::AbstractSource)
     sql = """
