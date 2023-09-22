@@ -67,19 +67,19 @@ end
 If sqlite = true (default) open file on path as an SQLite database (assume .sqlite extension)
 else open database 'name' on server 'path' (assume SQL Server database)
 """
-function opendatabase(path::String, name::String; sqlite = true)::DBInterface.Connection
+function opendatabase(path::String, name::String; sqlite=true)::DBInterface.Connection
     if sqlite
         return opensqlitedatabase(path, name)
     else
         return opensqlserverdatabase(path, name)
-    end 
+    end
 end
 """
     opensqlitedatabase(path::String, name::String)::DBInterface.Connection
 
 Open file on path as an SQLite database (assume .sqlite extension)
 """
-function opensqlitedatabase(path::String, name::String)::DBInterface.Connection 
+function opensqlitedatabase(path::String, name::String)::DBInterface.Connection
     file = joinpath(path, "$name.sqlite")
     if isfile(file)
         return SQLite.DB(file)
@@ -92,7 +92,7 @@ end
 
 Open database 'name' on server 'server' (assume SQL Server database)
 """
-function opensqlserverdatabase(server::String, name::String)::DBInterface.Connection 
+function opensqlserverdatabase(server::String, name::String)::DBInterface.Connection
     return ODBC.Connection("Driver=ODBC Driver 17 for SQL Server;Server=$server;Database=$name;Trusted_Connection=yes;")
 end
 """
@@ -100,9 +100,14 @@ end
 
 Retrieve table `table` as a DataFrame from `db`
 """
-function get_table(db::DBInterface.Connection, table::String)::AbstractDataFrame
+function get_table(db::SQLite.DB, table::String)::AbstractDataFrame
     sql = "SELECT * FROM $(table)"
     df = DBInterface.execute(db, sql) |> DataFrame
+    return df
+end
+function get_table(db::ODBC.Connection, table::String)::AbstractDataFrame
+    sql = "SELECT * FROM $(table)"
+    df = DBInterface.execute(db, sql, iterate_rows=true) |> DataFrame
     return df
 end
 """
@@ -125,7 +130,6 @@ makeodbcparam(s) = "?"
 Save a DataFrame to a database table, the names of the dataframe columns should be identical to the table column names in the database
 """
 function savedataframe(con::ODBC.Connection, df::AbstractDataFrame, table)
-    # ODBC.load(df, con,table; append = true)
     colnames = names(df)
     paramnames = map(makeodbcparam, colnames) #add @ to column names
     sql = "INSERT INTO $table ($(join(colnames, ", "))) VALUES ($(join(paramnames, ", ")));"
@@ -171,7 +175,7 @@ function insertwithidentity(db::ODBC.Connection, table, columns, values, keycol)
     VALUES ($(join(paramnames, ", ")));
     """
     stmt = DBInterface.prepare(db, sql)
-    df = DBInterface.execute(stmt, values) |> DataFrame
+    df = DBInterface.execute(stmt, values; iterate_rows=true) |> DataFrame
     return df[1, :last_id]
 end
 function insertwithidentity(db::SQLite.DB, table, columns, values, keycol)
@@ -183,22 +187,27 @@ function insertwithidentity(db::SQLite.DB, table, columns, values, keycol)
     stmt = DBInterface.prepare(db, sql)
     return DBInterface.lastrowid(DBInterface.execute(stmt, values))
 end
+function insertdata(db::DBInterface.Connection, table, columns, values)
+    stmt = prepareinsertstatement(db, table, columns)
+    return DBInterface.execute(stmt, values)
+end
+
 """
     prepareselectstatement(db::SQLite.DB, table, columns::Vector{String}, filter::Vector{String})
 
 Return a statement to select columns from a table, with 0 to n columns to filter on
 """
 function prepareselectstatement(db::SQLite.DB, table, columns::Vector{String}, filter::Vector{String})
-   # Start with the SELECT clause
-   select_clause = "SELECT " * join(columns, ", ") * " FROM " * table
+    # Start with the SELECT clause
+    select_clause = "SELECT " * join(columns, ", ") * " FROM " * table
 
-   # Check if there are any filter conditions and build the WHERE clause
-   if isempty(filter)
-       return DBInterface.prepare(db, select_clause)
-   else
-       where_clause = " WHERE " * join(["$col = @$col" for col in filter], " AND ")
-       return DBInterface.prepare(db, select_clause * where_clause)
-   end
+    # Check if there are any filter conditions and build the WHERE clause
+    if isempty(filter)
+        return DBInterface.prepare(db, select_clause)
+    else
+        where_clause = " WHERE " * join(["$col = @$col" for col in filter], " AND ")
+        return DBInterface.prepare(db, select_clause * where_clause)
+    end
 end
 """
     prepareselectstatement(db::SQLite.DB, table, columns::Vector{String}, filter::Vector{String})
@@ -206,28 +215,46 @@ end
 Return a statement to select columns from a table, with 0 to n columns to filter on
 """
 function prepareselectstatement(db::ODBC.Connection, table, columns::Vector{String}, filter::Vector{String})
-   # Start with the SELECT clause
-   select_clause = "SELECT " * join(columns, ", ") * " FROM " * table
+    # Start with the SELECT clause
+    select_clause = "SELECT " * join(columns, ", ") * " FROM " * table
 
-   # Check if there are any filter conditions and build the WHERE clause
-   if isempty(filter)
-       return DBInterface.prepare(db, select_clause)
-   else
-       where_clause = " WHERE " * join(["$col = ?" for col in filter], " AND ")
-       return DBInterface.prepare(db, select_clause * where_clause)
-   end
+    # Check if there are any filter conditions and build the WHERE clause
+    if isempty(filter)
+        return DBInterface.prepare(db, select_clause)
+    else
+        where_clause = " WHERE " * join(["$col = ?" for col in filter], " AND ")
+        return DBInterface.prepare(db, select_clause * where_clause)
+    end
 end
-function selectdataframe(db::DBInterface.Connection, table::String, columns::Vector{String}, filter::Vector{String}, filtervalues::DBInterface.StatementParams)::AbstractDataFrame
+function selectdataframe(db::SQLite.DB, table::String, columns::Vector{String}, filter::Vector{String}, filtervalues::DBInterface.StatementParams)::AbstractDataFrame
     stmt = prepareselectstatement(db, table, columns, filter)
     return DBInterface.execute(stmt, filtervalues) |> DataFrame
 end
-function selectsourcesites(db, source::AbstractSource)
+function selectdataframe(db::ODBC.Connection, table::String, columns::Vector{String}, filter::Vector{String}, filtervalues::DBInterface.StatementParams)::AbstractDataFrame
+    stmt = prepareselectstatement(db, table, columns, filter)
+    return DBInterface.execute(stmt, filtervalues; iterate_rows=true) |> DataFrame
+end
+
+"""
+    selectsourcesites(db, source::AbstractSource)
+
+Returns a dataframe with the sites associated with a source
+"""
+function selectsourcesites(db::SQLite.DB, source::AbstractSource)
     sql = """
     SELECT s.* FROM sites s
     JOIN sources ss ON s.source_id = ss.source_id
     WHERE ss.name = '$(source.name)';
     """
     return DBInterface.execute(db, sql) |> DataFrame
+end
+function selectsourcesites(db::ODBC.Connection, source::AbstractSource)
+    sql = """
+    SELECT s.* FROM sites s
+    JOIN sources ss ON s.source_id = ss.source_id
+    WHERE ss.name = '$(source.name)';
+    """
+    return DBInterface.execute(db, sql, iterate_rows=true) |> DataFrame
 end
 """
     createsources(db::SQLite.DB)
@@ -476,12 +503,16 @@ function createtransformations(db::SQLite.DB)
     );
     """
     DBInterface.execute(db, sql)
-    types = DataFrame([(transformation_type_id=1, name="Raw data ingest"), (transformation_type_id=2, name="Dataset transform")])
-    statuses = DataFrame([(transformation_status_id=1, name="Unverified"), (transformation_status_id=2, name="Verified")])
+    types = inittypes()
+    statuses = initstatuses()
     savedataframe(db, types, "transformation_types")
     savedataframe(db, statuses, "transformation_statuses")
     return nothing
 end
+inittypes() = DataFrame([(transformation_type_id=RDA_TRANSFORMATION_TYPE_INGEST, name="Raw data ingest"),
+    (transformation_type_id=RDA_TRANSFORMATION_TYPE_TRANSFORM, name="Dataset transform")])
+initstatuses() = DataFrame([(transformation_status_id=RDA_TRANSFORMATION_STATUS_UNVERIFIED, name="Unverified"),
+    (transformation_status_id=RDA_TRANSFORMATION_STATUS_VERIFIED, name="Verified")])
 function createtransformations(db::ODBC.Connection)
     sql = raw"""
     CREATE TABLE [transformation_types] (
@@ -521,8 +552,8 @@ function createtransformations(db::ODBC.Connection)
     );
     """
     DBInterface.execute(db, sql)
-    types = DataFrame([(transformation_type_id=1, name="Raw data ingest"), (transformation_type_id=2, name="Dataset transform")])
-    statuses = DataFrame([(transformation_status_id=1, name="Unverified"), (transformation_status_id=2, name="Verified")])
+    types = inittypes()
+    statuses = initstatuses()
     identityinserton(db, "transformation_types")
     savedataframe(db, types, "transformation_types")
     identityinsertoff(db, "transformation_types")
@@ -620,35 +651,9 @@ function createvariables(db::SQLite.DB)
     );
     """
     DBInterface.execute(db, sql)
-    types = DataFrame([(value_type_id=1, value_type="Integer", description=""),
-        (value_type_id=2, value_type="Float", description=""),
-        (value_type_id=3, value_type="String", description=""),
-        (value_type_id=4, value_type="Date", description="ISO Date yyyy-mm-dd"),
-        (value_type_id=5, value_type="Datetime", description="ISO Datetime yyyy-mm-ddTHH:mm:ss.sss"),
-        (value_type_id=6, value_type="Time", description="ISO Time HH:mm:ss.sss"),
-        (value_type_id=7, value_type="Categorical", description="Category represented by a Vocabulary with integer value and string code, stored as Integer")
-    ])
+    types = initvalue_types()
     SQLite.load!(types, db, "value_types")
     return nothing
-end
-function identityinserton(db::ODBC.Connection, table::String)
-    sql = "SET IDENTITY_INSERT [$table] ON"
-    DBInterface.execute(db, sql)
-    return nothing
-end
-function identityinsertoff(db::ODBC.Connection, table::String)
-    sql = "SET IDENTITY_INSERT [$table] OFF"
-    DBInterface.execute(db, sql)
-    return nothing
-end
-function updatevariable_vocabulary(db::DBInterface.Connection, name, domain_id, vocabulary_id)
-    sql = """
-    UPDATE variables
-      SET vocabulary_id = $vocabulary_id
-    WHERE name LIKE '%$name%'
-      AND domain_id = $domain_id
-    """
-    DBInterface.execute(db,sql)
 end
 function createvariables(db::ODBC.Connection)
     sql = raw"""
@@ -739,18 +744,38 @@ function createvariables(db::ODBC.Connection)
     );
     """
     DBInterface.execute(db, sql)
-    types = DataFrame([(value_type_id=1, value_type="Integer", description=""),
-        (value_type_id=2, value_type="Float", description=""),
-        (value_type_id=3, value_type="String", description=""),
-        (value_type_id=4, value_type="Date", description="ISO Date yyyy-mm-dd"),
-        (value_type_id=5, value_type="Datetime", description="ISO Datetime yyyy-mm-ddTHH:mm:ss.sss"),
-        (value_type_id=6, value_type="Time", description="ISO Time HH:mm:ss.sss"),
-        (value_type_id=7, value_type="Categorical", description="Category represented by a Vocabulary with integer value and string code, stored as Integer")
-    ])
+    types = initvalue_types()
     identityinserton(db, "value_types")
     savedataframe(db, types, "value_types")
     identityinsertoff(db, "value_types")
     return nothing
+end
+initvalue_types() = DataFrame([(value_type_id=RDA_TYPE_INTEGER, value_type="Integer", description=""),
+    (value_type_id=RDA_TYPE_FLOAT, value_type="Float", description=""),
+    (value_type_id=RDA_TYPE_STRING, value_type="String", description=""),
+    (value_type_id=RDA_TYPE_DATE, value_type="Date", description="ISO Date yyyy-mm-dd"),
+    (value_type_id=RDA_TYPE_DATETIME, value_type="Datetime", description="ISO Datetime yyyy-mm-ddTHH:mm:ss.sss"),
+    (value_type_id=RDA_TYPE_TIME, value_type="Time", description="ISO Time HH:mm:ss.sss"),
+    (value_type_id=RDA_TYPE_CATEGORY, value_type="Categorical", description="Category represented by a Vocabulary with integer value and string code, stored as Integer")
+])
+function identityinserton(db::ODBC.Connection, table::String)
+    sql = "SET IDENTITY_INSERT [$table] ON"
+    DBInterface.execute(db, sql)
+    return nothing
+end
+function identityinsertoff(db::ODBC.Connection, table::String)
+    sql = "SET IDENTITY_INSERT [$table] OFF"
+    DBInterface.execute(db, sql)
+    return nothing
+end
+function updatevariable_vocabulary(db::DBInterface.Connection, name, domain_id, vocabulary_id)
+    sql = """
+    UPDATE variables
+      SET vocabulary_id = $vocabulary_id
+    WHERE name LIKE '%$name%'
+      AND domain_id = $domain_id
+    """
+    DBInterface.execute(db, sql)
 end
 """
     createdatasets(db::SQLite.DB)
@@ -853,7 +878,11 @@ function createdatasets(db::ODBC.Connection)
     CREATE TABLE [data] (
         [row_id] INT NOT NULL,
         [variable_id] INT NOT NULL,
-        [value] SQL_VARIANT NULL,
+        [value_integer] INT NULL,
+        [value_float] FLOAT NULL,
+        [value_string] NVARCHAR(4000) NULL,
+        [value_datetime] DATETIME NULL,
+        [value_binary] VARBINARY(MAX) NULL,
         PRIMARY KEY ([row_id], [variable_id]),
         CONSTRAINT [fk_data_row_id] FOREIGN KEY ([row_id]) REFERENCES [datarows] ([row_id]) ON DELETE CASCADE ON UPDATE NO ACTION,
         CONSTRAINT [fk_data_variable_id] FOREIGN KEY ([variable_id]) REFERENCES [variables] ([variable_id]) ON DELETE CASCADE ON UPDATE NO ACTION

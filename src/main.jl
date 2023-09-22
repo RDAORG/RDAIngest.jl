@@ -8,7 +8,7 @@ using Dates
 
 #get environment variables
 dotenv()
-
+#
 #ENV["RDA_DBNAME"] = "RDA" #Don't use global variables
 # Use datbasesetup.jl to create the database
 @time createdatabase(ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], replace=true, sqlite=true)
@@ -36,7 +36,7 @@ source = CHAMPSSource()
 CHAMPSIngest = Ingest(source=source,
     death_file="CHAMPS_deid_basic_demographics",
     datasets=Dict("CHAMPS deid basic demographics" => "CHAMPS_deid_basic_demographics",
-        "CHAMPS deid verbal autopsy" => "CHAMPS_deid_verbal_autopsy",
+        "CHAMPS deid verbal autopsy" => "CHAMPS_deid_verbal_autopsy" ,
         "CHAMPS deid decode results" => "CHAMPS_deid_decode_results",
         "CHAMPS deid tac results" => "CHAMPS_deid_tac_results",
         "CHAMPS deid lab results" => "CHAMPS_deid_lab_results"
@@ -53,33 +53,10 @@ ingestion_id = ingest_deaths(CHAMPSIngest, ENV["RDA_SERVER"], ENV["RDA_DBNAME"],
 #
 # Step 4: Import datasets, and link datasets to deaths
 
-@time ingest_data(CHAMPSIngest, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"], ingestion_id_sqlite; sqlite = true)
-@time ingest_data(CHAMPSIngest, ENV["RDA_SERVER"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"], ingestion_id; sqlite = false)
-#=
-# Step 4.1: Test adding more datasets later without ingesting deaths first
-CHAMPSIngest1 = Ingest(source_name = "CHAMPS",
-                datafolder = "De_identified_data",
-                death_file = "CHAMPS_deid_basic_demographics",
-                death_idcol = "champs_deid",
-                site_col = "site_iso_code",
-                datasets = Dict("CHAMPS deid tac results" => "CHAMPS_deid_tac_results", 
-                "CHAMPS deid lab results" => "CHAMPS_deid_lab_results"),
-                datainstruments = Dict("cdc_93759_DS9.pdf" => "CHAMPS_deid_verbal_autopsy"),
-                ingest_desc = "Ingest 2",
-                transform_desc = "Ingest 2",
-                code_reference = "step testing",
-                author = "YC"
-                )
+@time ingest_data(CHAMPSIngest, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"]; ingestion_id=ingestion_id_sqlite, sqlite=true)
+@time ingest_data(CHAMPSIngest, ENV["RDA_SERVER"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"]; ingestion_id=ingestion_id, sqlite=false)
 
-db = opendatabase(ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"])
-source_id = get_source(db, CHAMPSIngest1.source_name)
-ingestion_id = add_ingestion(db, source_id, today(), CHAMPSIngest1.ingest_desc)
-transformation_id = add_transformation(db, 1, 1, CHAMPSIngest1.transform_desc, 
-                                        CHAMPSIngest1.code_reference, today(), CHAMPSIngest1.author)
-@time ingest_data(CHAMPSIngest1, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"],
-                transformation_id,ingestion_id)
-
-# check data
+#= check data
 check = dataset_to_dataframe(db, get_namedkey(db, "datasets", "CHAMPS_deid_tac_results", "dataset_id"))
 check = dataset_to_dataframe(db, get_namedkey(db, "datasets", "CHAMPS_deid_lab_results", "dataset_id"))
 

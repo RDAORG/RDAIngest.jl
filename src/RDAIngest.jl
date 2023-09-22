@@ -28,7 +28,7 @@ export
 #get_table, createsources, createprotocols, createtransformations,
 #createvariables, createdatasets, createinstruments, createdeaths
 
-ODBC.bindtypes(x::Vector{UInt8}) = ODBC.API.SQL_C_BINARY, ODBC.API.SQL_LONGVARBINARY
+#ODBC.bindtypes(x::Vector{UInt8}) = ODBC.API.SQL_C_BINARY, ODBC.API.SQL_LONGVARBINARY
 
 """
 Structs
@@ -45,6 +45,29 @@ struct Vocabulary
     description::String
     items::Vector{VocabularyItem}
 end
+
+# Define an abstract document input
+abstract type DataDocument end
+# Define subtypes of Document - csv, xlsx, pdf
+struct DocCSV <: DataDocument
+    path::String
+    name::String
+    delim::Char
+    quotechar::Char
+    dateformat::String
+    decimal::Char
+end
+struct DocXLSX <: DataDocument
+    path::String
+    name::String
+    sheetname::String
+    cellrange::String
+end
+struct DocPDF <: DataDocument
+    path::String
+    name::String
+end
+
 
 abstract type AbstractSource end
 Base.@kwdef struct CHAMPSSource <: AbstractSource
@@ -171,10 +194,12 @@ Base.@kwdef struct Ingest
 end
 
 """
+    ingest_source(source::AbstractSource, dbpath::String, dbname::String,
+    datapath::String; sqlite=true)
+
+
 Step 1: 
 Ingest macro data of sources: sites, instruments, protocols, ethics, vocabularies 
-
-    ingest_source(db::SQLite.DB, name)
 
 datapath: root folder with data from all sources [DATA_INGEST_PATH]
 """
@@ -289,7 +314,7 @@ function ingest_deaths(ingest::Ingest, dbpath::String, dbname::String, datapath:
             source_id = get_source(db, ingest.source.name)
 
             # Add ingestion and transformation info
-            ingestion_id = insertwithidentity(db, "data_ingestions", ["source_id", "date_received", "description"], [source_id, today(), ingest.ingest_desc], "data_ingestion_id")
+            ingestion_id = insertwithidentity(db, "data_ingestions", ["source_id", "date_received", "description"], [source_id, isa(db, SQLite.DB) ? Dates.format(today(), "yyyy-mm-dd") : today(), ingest.ingest_desc], "data_ingestion_id")
             # transformation should not be created for the death ingestion
 
             # Ingest deaths
@@ -303,16 +328,15 @@ function ingest_deaths(ingest::Ingest, dbpath::String, dbname::String, datapath:
             savedataframe(db, select(sitedeaths, :site_id, Symbol(ingest.source.id_col) => :external_id,
                     [] => Returns(ingestion_id) => :data_ingestion_id, copycols=false), "deaths")
 
-        end
 
-        println("Death data $(ingest.death_file) ingested.")
-        return ingestion_id #, transformation_id
+            println("Death data $(ingest.death_file) ingested.")
+            return ingestion_id #, transformation_id
+        end
 
     finally
         DBInterface.close!(db)
     end
 end
-
 
 """
     ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::String,
@@ -321,67 +345,64 @@ end
 
 Step 4: 
 Import datasets, and link datasets to deaths
-# transformation_id and ingestion_id can be from step 3 outputs if ingesting both death and datasets at the same time.
-# If only importing dataset without ingesting deaths, run add_ingestion() and add_transformation() to get new ids.
+* Ingestion_id can be from step 3 outputs if ingesting both death and datasets at the same time, if missing an ingestion will be created.
 """
-function ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::String, ingestion_id::Integer; sqlite = true)
+function ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::String; ingestion_id=0, sqlite=true)
     db = opendatabase(dbpath, dbname; sqlite)
     try
-        source = get_source(db, ingest.source.name)
-        domain = get_domain(db, ingest.source.name)
-        death_idvar = get_variable(db, domain, ingest.source.idcol)
-        transformation_id = insertwithidentity(db, "transformations", ["transformation_type_id", "transformation_status_id", "description", "code_reference", "date_created", "created_by"],
-            [1, 1, ingest.transform_desc, ingest.code_reference, today(), ingest.author], "transformation_id")
+        source_id = get_source(db, ingest.source.name)
+        domain_id = get_domain(db, ingest.source.name)
+        death_idvar = get_variable(db, domain_id, ingest.source.id_col)
 
-        for (key, value) in ingest.datasets
-
-            dataset_name = "$value"
-            dataset_desc = "$key"
-            # Import datasets
-            dataset_id = import_datasets(db, datapath,
-                ingest, dataset_name, dataset_desc,
-                domain, transformation_id, ingestion_id)
-
-            # Link to deathrows
-            if !dataset_in_ingest(db, dataset_id, ingestion_id) #probably don't need this??
-                error("Dataset $dataset_id not part of data ingest $ingestion_id")
+        DBInterface.transaction(db) do
+            if ingestion_id == 0
+                ingestion_id = insertwithidentity(db, "data_ingestions", ["source_id", "date_received", "description"], [source_id, isa(db, SQLite.DB) ? Dates.format(today(), "yyyy-mm-dd") : today(), ingest.ingest_desc], "data_ingestion_id")
             end
+            transformation_id = insertwithidentity(db, "transformations", ["transformation_type_id", "transformation_status_id", "description", "code_reference", "date_created", "created_by"],
+                [1, 1, ingest.transform_desc, ingest.code_reference, isa(db, SQLite.DB) ? Dates.format(today(), "yyyy-mm-dd") : today(), ingest.author], "transformation_id")
 
-            if !death_in_ingest(db, ingestion_id)
-                println("Death data is not part of currrent data ingest $ingestion_id")
-                if death_ingestion_id === nothing
-                    death_ingestion_id = get_last_deathingest(db, source)
+            for (dataset_desc, dataset_name) in ingest.datasets
+
+                # Import datasets
+                ds = read_data(DocCSV(joinpath(datapath, ingest.source.name, ingest.source.datafolder), dataset_name,
+                    ingest.source.delim, ingest.source.quotechar, ingest.source.dateformat, ingest.source.decimal))
+
+                dataset_id = save_dataset(db, ds, dataset_name, dataset_desc,
+                    domain_id, transformation_id, ingestion_id)
+
+                # Link to deathrows
+                if !death_in_ingest(db, ingestion_id)
+                    println("Death data is not part of currrent data ingest $ingestion_id")
+                    death_ingestion_id = get_last_deathingest(db, source_id)
                     println("Death ingestion id not specified. By default, use lastest ingested deaths from source $(ingest.source.name) from ingestion id $death_ingestion_id.")
                 else
-                    error("Death from source $(ingest.source.name) hasn't been ingested.")
+                    death_ingestion_id = ingestion_id
                 end
-            else
-                death_ingestion_id = ingestion_id
+                println("Linking dataset $dataset_name to deathrows from ingestion id $death_ingestion_id, dataset_id = $dataset_id, death_idvar = $death_idvar")
+                link_deathrows(db, death_ingestion_id, dataset_id, death_idvar)
+
+                println("Dataset $dataset_name imported and linked to deathrows.")
+
             end
-            link_deathrows(db, death_ingestion_id, dataset_id, death_idvar)
 
-            println("Dataset $dataset_name imported and linked to deathrows.")
-
-        end
-
-        # Link to instruments in instrument_datasets
-        if !isempty(ingest.datainstruments)
-            for (key1, value1) in ingest.datainstruments #instrument name, dataset name
-                link_instruments(db, "$key1", "$value1")
+            # Link to instruments in instrument_datasets
+            if !isempty(ingest.datainstruments)
+                for (instrument_name, dataset_name) in ingest.datainstruments #instrument name, dataset name
+                    link_instruments(db, instrument_name, dataset_name)
+                end
             end
         end
-
     finally
-        close(db)
+        DBInterface.close!(db)
     end
 end
 
 """
-    add_source(source::AbstractSource, db::SQLite.DB)
+    add_source(source::AbstractSource, db::DBInterface.Connection)
 
 Add source `name` to the sources table, and returns the `source_id`
 """
-function add_source(source::AbstractSource, db)
+function add_source(source::AbstractSource, db::DBInterface.Connection)
     id = get_source(db, source.name)
     if ismissing(id)  # insert source
         id = RDAIngest.insertwithidentity(db, "sources", ["name"], [source.name], "source_id")
@@ -389,22 +410,21 @@ function add_source(source::AbstractSource, db)
     return id
 end
 
-
 """
-    get_source(db::SQLite.DB, name)
+    get_source(db::DBInterface.Connection, name)
 
 Return the `source_id` of source `name`, returns `missing` if source doesn't exist
 """
-function get_source(db, name)
+function get_source(db::DBInterface.Connection, name)
     return get_namedkey(db, "sources", name, :source_id)
 end
 
 """
-    get_namedkey(db, table, key, keycol)
+    get_namedkey(db::DBInterface.Connection, table, key, keycol)
 
  Return the integer key from table `table` in column `keycol` (`keycol` must be a `Symbol`) for key with name `key`
 """
-function get_namedkey(db, table, key, keycol)
+function get_namedkey(db::DBInterface.Connection, table, key, keycol)
     stmt = prepareselectstatement(db, table, ["*"], ["name"])
     df = DBInterface.execute(stmt, [key]) |> DataFrame
     if nrow(df) == 0
@@ -415,27 +435,35 @@ function get_namedkey(db, table, key, keycol)
 end
 
 """
-    get_variable(db, domain, name)
+    get_variable(db::DBInterface.Connection, domain, name)
 
 Returns the `variable_id` of variable named `name` in domain with id `domain`
 """
-function get_variable(db, domain, name)
+function get_variable(db::ODBC.Connection, domain, name)
     stmt = prepareselectstatement(db, "variables", ["variable_id"], ["domain_id", "name"])
-    result = DBInterface.execute(stmt, [domain, name])
-    if isempty(result)
+    result = DBInterface.execute(stmt, [domain, name]; iterate_rows=true) |> DataFrame
+    if nrow(result) == 0
         return missing
     else
-        df = DataFrame(result)
-        return df[1, :id]
+        return result[1, :variable_id]
+    end
+end
+function get_variable(db::SQLite.DB, domain, name)
+    stmt = prepareselectstatement(db, "variables", ["variable_id"], ["domain_id", "name"])
+    result = DBInterface.execute(stmt, [domain, name]) |> DataFrame
+    if nrow(result) == 0
+        return missing
+    else
+        return result[1, :variable_id]
     end
 end
 
 """
-    add_domain(db::SQLite.DB, domain_name::String, domain_description::String)
+    add_domain(db::DBInterface.Connection, domain_name::String, domain_description::String)
 
 Add domain to the domain table if not exist, and returns the domain id
 """
-function add_domain(db, domain_name::String, domain_description::String="")
+function add_domain(db::DBInterface.Connection, domain_name::String, domain_description::String="")
     domain = get_domain(db, domain_name)
     if ismissing(domain)  # insert source
         domain = RDAIngest.insertwithidentity(db, "domains", ["name", "description"], [domain_name, domain_description], "domain_id")
@@ -444,20 +472,20 @@ function add_domain(db, domain_name::String, domain_description::String="")
 end
 
 """
-    get_domain(db, domain_name::String)
+    get_domain(db::DBInterface.Connection, domain_name::String)
 
 Return the domain_id for domain named `domain_name`
 """
-function get_domain(db, domain_name::String)
+function get_domain(db::DBInterface.Connection, domain_name::String)
     return get_namedkey(db, "domains", domain_name, Symbol("domain_id"))
 end
 
 """
-    add_sites(source::CHAMPSSource, db, sourceid::Integer, datapath::String)
+    add_sites(source::CHAMPSSource, db::DBInterface.Connection, sourceid::Integer, datapath::String)
 
 Add sites and country iso2 codes to sites table
 """
-function add_sites(source::CHAMPSSource, db, sourceid::Integer, datapath::String)
+function add_sites(source::CHAMPSSource, db::DBInterface.Connection, sourceid::Integer, datapath::String)
     sites = read_sitedata(source, datapath, sourceid)
 
     select!(sites,
@@ -470,7 +498,12 @@ function add_sites(source::CHAMPSSource, db, sourceid::Integer, datapath::String
     println("Site names and country iso2 codes ingested.")
     return nothing
 end
-function add_sites(source::COMSASource, db, sourceid::Integer, datapath::String)
+"""
+    add_sites(source::COMSASource, db::DBInterface.Connection, sourceid::Integer, datapath::String)
+
+Add sites and country iso2 codes to sites table
+"""
+function add_sites(source::COMSASource, db::DBInterface.Connection, sourceid::Integer, datapath::String)
     sites = read_sitedata(source, datapath, sourceid)
 
     if (source.country_iso2 == "" || !isdefined(source, Symbol("country_iso2")))
@@ -488,6 +521,11 @@ function add_sites(source::COMSASource, db, sourceid::Integer, datapath::String)
     return nothing
 end
 
+"""
+    read_sitedata(source::AbstractSource, datapath, sourceid)
+
+Data are aggregated by site_col in order to identify unique sites
+"""
 function read_sitedata(source::AbstractSource, datapath, sourceid)
     df = read_data(DocCSV(joinpath(datapath, source.name, source.datafolder),
         source.site_data,
@@ -497,14 +535,12 @@ function read_sitedata(source::AbstractSource, datapath, sourceid)
     return (sites)
 end
 
-
 """
     add_protocols(source::AbstractSource, db::SQLite.DB, datapath::String)
 
 Add protocols
 Todo: how protocols link to enthics_id, need a mapping dictionary? 
 """
-
 function add_protocols(source::AbstractSource, db, datapath::String)
 
     # Insert protocol names
@@ -539,13 +575,11 @@ function add_protocols(source::AbstractSource, db, datapath::String)
     return nothing
 end
 
-
 """
     add_instruments(source::AbstractSource, db::SQLite.DB, datapath::String)
 
 Add survey instruments
 """
-
 function add_instruments(source::AbstractSource, db, datapath::String)
 
     # Insert instrument names
@@ -570,14 +604,13 @@ function add_instruments(source::AbstractSource, db, datapath::String)
     return nothing
 end
 
-
 """
-    add_ethics(source::AbstractSource, db::SQLite.DB, datapath::String)
+    add_ethics(source::AbstractSource, db::DBInterface.Connection, datapath::String)
 
 Ethics document, committee and reference need to be in matching order
-"""
 
-function add_ethics(source::AbstractSource, db, datapath::String)
+"""
+function add_ethics(source::AbstractSource, db::DBInterface.Connection, datapath::String)
 
     # Insert ethics names
     stmt_name = prepareinsertstatement(db, "ethics", ["name", "ethics_committee", "ethics_reference"])
@@ -742,7 +775,6 @@ function read_variables(source::AbstractSource, dictionarypath::String, dictiona
     return df
 end
 
-
 """
     get_vocabulary(variable, l)::Vocabulary
 
@@ -760,39 +792,6 @@ function get_vocabulary(name, l)::Vocabulary
         end
     end
     return Vocabulary(name, description, items)
-end
-
-
-
-"""
-    add_dataset_ingestion(db::SQLite.DB, dataset_id, transformation_id::Integer, ingestion_id::Integer)
-
-Record a dataset ingestion into ingest_datasets
-"""
-function add_dataset_ingestion(db::SQLite.DB, dataset_id, transformation_id::Integer, ingestion_id::Integer)
-    sql = """
-    INSERT INTO ingest_datasets (data_ingestion_id, transformation_id, dataset_id)
-    VALUES (@data_ingestion_id, @transformation_id, @dataset_id);
-    """
-    stmt = DBInterface.prepare(db, sql)
-    DBInterface.execute(stmt, (data_ingestion_id=ingestion_id, transformation_id=transformation_id, dataset_id=dataset_id))
-    return nothing
-end
-
-
-"""
-    add_transformation_output(db, dataset_id, transformation_id)
-
-Add a transformation output dataset
-"""
-function add_transformation_output(db::SQLite.DB, dataset_id, transformation_id)
-    sql = """
-    INSERT INTO transformation_outputs (transformation_id, dataset_id)
-    VALUES (@transformation_id, @dataset_id);
-    """
-    stmt = DBInterface.prepare(db, sql)
-    DBInterface.execute(stmt, (transformation_id=transformation_id, dataset_id=dataset_id))
-    return nothing
 end
 
 """
@@ -815,75 +814,94 @@ function add_transformation(db::SQLite.DB, type::Integer, status::Integer, descr
     end
 end
 
-
-
 """
-    import_datasets(db::SQLite.DB, datapath::String,
-    ingest::Ingest, filename::String, description::String,
+    save_dataset(db::DBInterface.Connection, dataset::AbstractDataFrame, name::String, description::String,
     domain_id::Integer, transformation_id::Integer, ingestion_id::Integer)::Integer
 
-Insert datasets into SQLite db and returns the datatset_id
-
+Insert dataframe containing dataset into RDA database and returns the dataset_id
 """
-function import_datasets(db::SQLite.DB, datapath::String,
-    ingest::Ingest, filename::String, description::String,
+function save_dataset(db::DBInterface.Connection, dataset::AbstractDataFrame, name::String, description::String,
     domain_id::Integer, transformation_id::Integer, ingestion_id::Integer)::Integer
-    try
-        SQLite.transaction(db)
 
-        data = read_data(DocCSV(joinpath(datapath, ingest.source.name, ingest.datafolder), filename,
-            ingest.delim, ingest.quotechar, ingest.dateformat, ingest.decimal))
+    variables = lookup_variables(db, names(dataset), domain_id)
+    transform!(variables, [:variable_id, :value_type_id] => ByRow((x, y) -> Tuple([x, y])) => :variable_id_type)
+    #println(show(variables))
+    var_lookup = Dict{String,Tuple{Integer,Integer}}(zip(variables.name, variables.variable_id_type))
 
-        variables = lookup_variables(db, names(data), domain_id)
-        var_lookup = Dict{String,Integer}(zip(variables.name, variables.variable_id))
+    # Add dataset entry to datasets table
+    dataset_id = insertwithidentity(db, "datasets", ["name", "date_created", "description"],
+        [name, isa(db, SQLite.DB) ? Dates.format(today(), "yyyy-mm-dd") : today(), description], "dataset_id")
 
-        # Add dataset entry to datasets table
-        dataset_id = add_datasets(db, filename, description)
+    insertdata(db, "ingest_datasets", ["data_ingestion_id", "transformation_id", "dataset_id"],
+        [ingestion_id, transformation_id, dataset_id])
+    insertdata(db, "transformation_outputs", ["transformation_id", "dataset_id"],
+        [transformation_id, dataset_id])
 
-        add_dataset_ingestion(db, dataset_id, transformation_id, ingestion_id)
-        add_transformation_output(db, dataset_id, transformation_id)
+    savedataframe(db, select(variables, [] => Returns(dataset_id) => :dataset_id, :variable_id), "dataset_variables")
 
-        savedataframe(db, select(variables, [] => Returns(dataset_id) => :dataset_id, :variable_id), "dataset_variables")
+    # Store datarows in datarows table and get row_ids 
+    datarows = add_datarows(db, nrow(dataset), dataset_id)
 
-        # Store datarows in datarows table and get row_ids 
-        datarows = add_datarows(db::SQLite.DB, nrow(data), dataset_id)
-
-        #prepare data for storage
-        d = hcat(datarows, data, makeunique=true, copycols=false) #add the row_id to each row of data
-        #store whole column at a time
-        for col in propertynames(data)
-            variable_id = var_lookup[string(col)]
-            coldata = select(d, :row_id, col => :value; copycols=false)
-            add_data_column(db, variable_id, coldata)
-        end
-        SQLite.commit(db)
-
-        return dataset_id
-
-        println("Dataset $filename ingested.")
-
-    catch e
-        SQLite.rollback(db)
-        throw(e)
+    #prepare data for storage
+    d = hcat(datarows, dataset, makeunique=true, copycols=false) #add the row_id to each row of data
+    #store whole column at a time
+    for col in propertynames(dataset)
+        variable_id, value_type = var_lookup[string(col)]
+        coldata = select(d, :row_id, col => :value; copycols=false)
+        #println("Saving column $col : type=$(eltype(coldata.value)) : value_type=$value_type : $name.")
+        add_data_column(db, variable_id, value_type, coldata)
     end
-
+    println("Dataset $name ingested.")
+    return dataset_id
 end
-
 
 """
     add_data_column(db::SQLite.DB, variable_id, coldata)
 
 Insert data for a column of the source dataset
 """
-function add_data_column(db::SQLite.DB, variable_id, coldata)
-    sql = """
-        INSERT INTO data (row_id, variable_id, value)
-        VALUES (@row_id, @variable_id, @value)
-    """
-    stmt = DBInterface.prepare(db, sql)
-    isdate = eltype(coldata.value) >: Date
+function add_data_column(db::SQLite.DB, variable_id, value_type, coldata)
+    stmt = prepareinsertstatement(db, "data", ["row_id", "variable_id", "value"])
+    if eltype(coldata.value) <: TimeType
+        if value_type == RDA_TYPE_DATE
+            transform!(coldata, :value => ByRow(x -> !ismissing(x) ? Dates.format(x, "yyyy-mm-dd") : x) => :value)
+        elseif value_type == RDA_TYPE_TIME
+            transform!(coldata, :value => ByRow(x -> !ismissing(x) ? Dates.format(x, "HH:MM:SS.sss") : x) => :value)
+        elseif value_type == RDA_TYPE_DATETIME
+            transform!(coldata, :value => ByRow(x -> !ismissing(x) ? Dates.format(x, "yyyy-mm-ddTHH:MM:SS.sss") : x) => :value)
+        else
+            error("Variable $variable_id is not a date/time type. value_type = $value_type, eltype = $(eltype(coldata.value))")
+        end
+    end
     for row in eachrow(coldata)
-        DBInterface.execute(stmt, (row_id=row.row_id, variable_id=variable_id, value=(isdate && !ismissing(row.value) ? Dates.format(row.value, "yyyy-mm-dd") : row.value)))
+        DBInterface.execute(stmt, [row.row_id, variable_id, row.value])
+    end
+    return nothing
+end
+function add_data_column(db::ODBC.Connection, variable_id, value_type, coldata)
+    if value_type == RDA_TYPE_INTEGER
+        stmt = prepareinsertstatement(db, "data", ["row_id", "variable_id", "value_integer"])
+    elseif value_type == RDA_TYPE_FLOAT
+        stmt = prepareinsertstatement(db, "data", ["row_id", "variable_id", "value_float"])
+    elseif value_type == RDA_TYPE_STRING
+        stmt = prepareinsertstatement(db, "data", ["row_id", "variable_id", "value_string"])
+        if eltype(coldata.value) <: Union{Missing,Number}
+            transform!(coldata, :value => ByRow(x -> !ismissing(x) ? string(x) : x) => :value)
+        else
+            transform!(coldata, :value => ByRow(x -> !ismissing(x) ? String(x) : x) => :value)
+        end
+    elseif value_type == RDA_TYPE_DATE || value_type == RDA_TYPE_TIME || value_type == RDA_TYPE_DATETIME
+        stmt = prepareinsertstatement(db, "data", ["row_id", "variable_id", "value_datetime"])
+    elseif value_type == RDA_TYPE_CATEGORY && eltype(coldata.value) <: Union{Missing,Integer}
+        stmt = prepareinsertstatement(db, "data", ["row_id", "variable_id", "value_integer"])
+    elseif value_type == RDA_TYPE_CATEGORY && eltype(coldata.value) <: Union{Missing,AbstractString}
+        stmt = prepareinsertstatement(db, "data", ["row_id", "variable_id", "value_string"])
+        transform!(coldata, :value => ByRow(x -> !ismissing(x) ? String(x) : x) => :value)
+    else
+        error("Variable $variable_id is not a valid type. value_type = $value_type, eltype = $(eltype(coldata.value))")
+    end
+    for row in eachrow(coldata)
+        DBInterface.execute(stmt, [row.row_id, variable_id, row.value])
     end
     return nothing
 end
@@ -895,23 +913,16 @@ Returns a DataFrame with dataset variable names and ids
 """
 function lookup_variables(db, variable_names, domain)
     names = DataFrame(:name => variable_names)
-    sql = """
-    SELECT name, variable_id FROM variables
-    WHERE domain_id = $domain
-    """
-    variables = DBInterface.execute(db, sql) |> DataFrame
-    v = innerjoin(variables, names, on=:name) #just the variables in this dataset
-    return v
+    variables = selectdataframe(db, "variables", ["name", "variable_id", "value_type_id"], ["domain_id"], [domain]) |> DataFrame
+    return innerjoin(variables, names, on=:name) #just the variables in this dataset
 end
-
-
 
 """
     link_instruments(db::SQLite.DB, instrument_name, dataset_name)
 
 Insert records into `instrument_datasets` table, linking datasets with instruments.
 """
-function link_instruments(db::SQLite.DB, instrument_name::String, dataset_name::String)
+function link_instruments(db::DBInterface.Connection, instrument_name::String, dataset_name::String)
 
     # get id for dataset and matching instrument
     dataset_id = get_namedkey(db, "datasets", dataset_name, :dataset_id)
@@ -924,17 +935,12 @@ function link_instruments(db::SQLite.DB, instrument_name::String, dataset_name::
         error("Instrument file $instrument_name is not ingested.")
     end
 
-    # Insert into db
-    sql = """
-    INSERT INTO instrument_datasets(instrument_id, dataset_id) 
-    VALUES (@instrument_id, @dataset_id);
-    """
-    stmt = DBInterface.prepare(db, sql)
-    DBInterface.execute(stmt, (instrument_id=instrument_id, dataset_id=dataset_id))
+    insertdata(db, "instrument_datasets", ["instrument_id", "dataset_id"], [instrument_id, dataset_id])
 
-    return println("Linked dataset $dataset_name to instrument $instrument_name")
+    println("Linked dataset $dataset_name to instrument $instrument_name")
+
+    return nothing
 end
-
 
 """
     link_deathrows(db::SQLite.DB, ingestion_id, dataset_id, death_identifier)
@@ -961,23 +967,40 @@ function link_deathrows(db::SQLite.DB, ingestion_id, dataset_id, death_identifie
 
     return nothing
 end
+function link_deathrows(db::ODBC.Connection, ingestion_id, dataset_id, death_identifier)
+
+    sql = """
+        INSERT INTO death_rows (death_id, row_id)
+        SELECT
+            d.death_id,
+            data.row_id
+        FROM deaths d
+        JOIN data ON d.external_id = data.value_string
+        JOIN datarows r ON data.row_id = r.row_id
+        WHERE d.data_ingestion_id = ?
+        AND data.variable_id = ?
+        AND r.dataset_id = ?
+        AND NOT EXISTS (
+            SELECT 1
+            FROM death_rows dr
+            WHERE dr.death_id = d.death_id AND dr.row_id = data.row_id
+        )
+    """
+    stmt = DBInterface.prepare(db, sql)
+    DBInterface.execute(stmt, [ingestion_id, death_identifier, dataset_id])
+
+    return nothing
+end
 
 """
-death_in_ingest(db, ingestion_id)
+    death_in_ingest(db, ingestion_id)
 
 If ingested deaths are part of ingestion_id
 """
-
 function death_in_ingest(db, ingestion_id)
-    sql = """
-        SELECT COUNT(*) n FROM deaths
-        WHERE data_ingestion_id = @ingestion_id;
-    """
-    stmt = DBInterface.prepare(db, sql)
-    df = DBInterface.execute(stmt, (ingestion_id = ingestion_id)) |> DataFrame
-    return nrow(df) > 0 && df[1, :n] > 0
+    df = selectdataframe(db, "deaths", ["COUNT(*)"], ["data_ingestion_id"], [ingestion_id]) |> DataFrame
+    return nrow(df) > 0 && df[1, 1] > 0
 end
-
 
 """
 dataset_in_ingest(db, dataset_id, ingestion_id)
@@ -986,47 +1009,17 @@ If dataset_id is part of ingestion_id
 """
 
 function dataset_in_ingest(db, dataset_id, ingestion_id)
-    sql = """
-        SELECT COUNT(*) n FROM ingest_datasets
-        WHERE data_ingestion_id = @ingestion_id
-          AND dataset_id = @dataset_id;
-    """
-    stmt = DBInterface.prepare(db, sql)
-    df = DBInterface.execute(stmt, (ingestion_id=ingestion_id, dataset_id=dataset_id)) |> DataFrame
-    return nrow(df) > 0 && df[1, :n] > 0
+    df = selectdataframe(db, "ingest_datasets", ["COUNT(*)"], ["data_ingestion_id", "dataset_id"], [ingestion_id, dataset_id]) |> DataFrame
+    return nrow(df) > 0 && df[1, 1] > 0
 end
 
-
 """
-read_data(DocName)
+read_data(datadoc)
 
 Read file names and formatting parameters, returns a DataFrame with the data
 """
-
-# Define an abstract document input
-abstract type DocName end
-# Define subtypes of Document - csv, xlsx, pdf
-struct DocCSV
-    path::String
-    name::String
-    delim::Char
-    quotechar::Char
-    dateformat::String
-    decimal::Char
-end
-struct DocXLSX
-    path::String
-    name::String
-    sheetname::String
-    cellrange::String
-end
-struct DocPDF
-    path::String
-    name::String
-end
-
-function read_data(DocName::DocPDF)
-    file = joinpath(DocName.path, "$(DocName.name)") #.pdf
+function read_data(datadoc::DocPDF)
+    file = joinpath(datadoc.path, "$(datadoc.name)") #.pdf
     if !isfile(file)
         error("File '$file' not found.")
     else
@@ -1034,22 +1027,22 @@ function read_data(DocName::DocPDF)
         return df
     end
 end
-function read_data(DocName::DocCSV)
-    file = joinpath(DocName.path, "$(DocName.name).csv")
+function read_data(datadoc::DocCSV)
+    file = joinpath(datadoc.path, "$(datadoc.name).csv")
     if !isfile(file)
         error("File '$file' not found.")
     else
-        df = CSV.File(file; delim=DocName.delim, quotechar=DocName.quotechar,
-            dateformat=DocName.dateformat, decimal=DocName.decimal) |> DataFrame
+        df = CSV.File(file; delim=datadoc.delim, quotechar=datadoc.quotechar,
+            dateformat=datadoc.dateformat, decimal=datadoc.decimal) |> DataFrame
         return df
     end
 end
-function read_data(DocName::DocXLSX)
-    file = joinpath(DocName.path, "$(DocName.name)") #xlsx
+function read_data(datadoc::DocXLSX)
+    file = joinpath(datadoc.path, "$(datadoc.name)") #xlsx
     if !isfile(file)
         error("File '$file' not found.")
     else
-        df = DataFrame(XLSX.readdata(file, DocName.sheetname, DocName.cellrange), :auto)
+        df = DataFrame(XLSX.readdata(file, datadoc.sheetname, datadoc.cellrange), :auto)
         return df
     end
 end
@@ -1074,7 +1067,72 @@ function dataset_to_dataframe(db::SQLite.DB, dataset)::AbstractDataFrame
     long = DBInterface.execute(stmt, (dataset = dataset)) |> DataFrame
     return unstack(long, :row_id, :variable, :value)
 end
-
+function dataset_variables(db::SQLite.DB, dataset)::AbstractDataFrame
+    sql = """
+    SELECT
+        v.variable_id,
+        v.name variable,
+        v.value_type_id
+    FROM dataset_variables dv
+      JOIN variables v ON dv.variable_id = v.variable_id
+    WHERE dv.dataset_id = @dataset;
+    """
+    stmt = DBInterface.prepare(db, sql)
+    return DBInterface.execute(stmt, (dataset = dataset)) |> DataFrame
+end
+function dataset_variables(db::ODBC.Connection, dataset)::AbstractDataFrame
+    sql = """
+    SELECT
+        v.variable_id,
+        v.name variable,
+        v.value_type_id
+    FROM dataset_variables dv
+      JOIN variables v ON dv.variable_id = v.variable_id
+    WHERE dv.dataset_id = ?;
+    """
+    stmt = DBInterface.prepare(db, sql)
+    return DBInterface.execute(stmt, [dataset]; iterate_rows=true) |> DataFrame
+end
+function dataset_column(db::SQLite.DB, dataset_id::Integer, variable_id::Integer, variable_name::String)::AbstractDataFrame
+    sql = """
+    SELECT
+        d.row_id,
+        d.value as $variable_name
+    FROM data d
+      JOIN datarows r ON d.row_id = r.row_id
+    WHERE r.dataset_id = @dataset_id
+      AND d.variable_id = @variable_id;
+    """
+    stmt = DBInterface.prepare(db, sql)
+    return DBInterface.execute(stmt, (dataset_id = dataset_id, variable_id=variable_id)) |> DataFrame
+end
+function dataset_column(db::ODBC.Connection, dataset_id::Integer, variable_id::Integer, variable_name::String)::AbstractDataFrame
+    #TODO fix value type
+    sql = """
+    SELECT
+        d.row_id,
+        d.value as $variable_name
+    FROM data d
+      JOIN datarows r ON d.row_id = r.row_id
+    WHERE r.dataset_id = ?
+      AND d.variable_id = ?;
+    """
+    stmt = DBInterface.prepare(db, sql)
+    return DBInterface.execute(stmt, [dataset_id, variable_id]; iterate_rows=true) |> DataFrame
+end
+function dataset_to_dataframe(db::ODBC.Connection, dataset)::AbstractDataFrame
+    variables = dataset_variables(db, dataset)
+    df = DataFrame()
+    col1 = true
+    for variable in eachrow(variables)
+       if col1
+           df = dataset_column(db, dataset, variable.variable_id, variable.variable)
+           col1 = false
+       else
+           df = outerjoin(df, dataset_column(db, dataset, variable.variable_id, variable.variable), on=:row_id)
+       end 
+    end
+end
 """
     dataset_to_arrow(db, dataset, datapath)
 
@@ -1142,44 +1200,38 @@ lines(str) = split(str, '\n')
 
 Get ingestion id for latest death ingestion for source
 """
-function get_last_deathingest(db::SQLite.DB, source_name::String)
-
-    source = get_source(db, source_name)
-
-    source_ingests = DBInterface.execute(db, "SELECT data_ingestion_id FROM data_ingestions WHERE source_id = $source") |> DataFrame
-
+function get_last_deathingest(db::SQLite.DB, source_id::Integer)
     sql = """
-    SELECT data_ingestion_id, COUNT(*) As n 
-    FROM deaths 
-    WHERE data_ingestion_id IN ($(join(source_ingests.data_ingestion_id, ",")))
-    GROUP BY data_ingestion_id
+    SELECT 
+        di.data_ingestion_id
+    FROM data_ingestions di
+    JOIN deaths d ON di.data_ingestion_id = d.data_ingestion_id
+    WHERE source_id = @source_id
+    ORDER BY di.date_received DESC
+    LIMIT 1;
     """
-    death_ingests = DBInterface.execute(db, sql) |> DataFrame
-    if nrow(death_ingests) > 0 && any(x -> x > 0, death_ingests.n)
-        death_ingestion_id = death_ingests.data_ingestion_id[death_ingests.n.>0][end]
-        return death_ingestion_id
+    death_ingests = DBInterface.execute(db, sql, (source_id = source_id)) |> DataFrame
+    if nrow(death_ingests) > 0
+        return death_ingests[1, :data_ingestion_id]
     else
-        error("Death from source $source_name hasn't been ingested.")
+        error("Death from source $source_id hasn't been ingested.")
     end
 end
-
-"""
-    add_datasets(db, new_dataset_name, new_dataset_description)
-
-Add dataset entry in the datasets table
-"""
-function add_datasets(db::SQLite.DB, dataset_name::String, dataset_description::String)
+function get_last_deathingest(db::ODBC.Connection, source_id::Integer)
     sql = """
-    INSERT INTO datasets(name, date_created, description) 
-    VALUES (@name, @date_created, @description);
+    SELECT TOP 1
+        di.data_ingestion_id
+    FROM data_ingestions di
+    JOIN deaths d ON di.data_ingestion_id = d.data_ingestion_id
+    WHERE source_id = ?
+    ORDER BY di.date_received DESC;
     """
-    stmt = DBInterface.prepare(db, sql)
-    dataset_id = DBInterface.lastrowid(DBInterface.execute(stmt,
-        (name=dataset_name,
-            date_created=Dates.format(today(), "yyyy-mm-dd"),
-            description=dataset_description)))
-    println("Entry for dataset $dataset_name added in the datasets table")
-    return dataset_id
+    death_ingests = DBInterface.execute(db, sql, [source_id]) |> DataFrame
+    if nrow(death_ingests) > 0
+        return death_ingests[1, :data_ingestion_id]
+    else
+        error("Death from source $source_id hasn't been ingested.")
+    end
 end
 
 """
@@ -1187,18 +1239,16 @@ end
 
     Define data rows in the datarows table
 """
-function add_datarows(db::SQLite.DB, nrow::Integer, dataset_id::Integer)
-    stmt = DBInterface.prepare(db, "INSERT INTO datarows (dataset_id) VALUES(@dataset_id);")
+function add_datarows(db::DBInterface.Connection, nrow::Integer, dataset_id::Integer)
+    stmt = prepareinsertstatement(db, "datarows", ["dataset_id"])
+    #Create a row_id for every row in the dataset
     for i = 1:nrow
-        DBInterface.execute(stmt, (dataset_id = dataset_id))
+        DBInterface.execute(stmt, [dataset_id])
     end
-
-    datarows = DBInterface.execute(db, "SELECT row_id FROM datarows WHERE dataset_id = $dataset_id;") |> DataFrame
-
-    return datarows
+    return selectdataframe(db, "datarows", ["row_id"], ["dataset_id"], [dataset_id]) |> DataFrame
 end
 
-
+include("constants.jl")
 include("rdadatabase.jl")
 
-end
+end #module
