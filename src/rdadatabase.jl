@@ -264,14 +264,14 @@ Creates tables to record a source and associated site/s for deaths contributed t
 function createsources(db::SQLite.DB)
     sql = raw"""
     CREATE TABLE "sources" (
-    "source_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "source_id" INTEGER NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL
     );
     """
     DBInterface.execute(db, sql)
     sql = raw"""
     CREATE TABLE "sites" (
-    "site_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "site_id" INTEGER NOT NULL PRIMARY KEY,
     "site_name" TEXT NOT NULL,
     "country_iso2" TEXT NOT NULL,
     "source_id" INTEGER NOT NULL,
@@ -326,16 +326,18 @@ Create tables to record information about protocols and the ethics approvals for
 function createprotocols(db::SQLite.DB)
     sql = raw"""
     CREATE TABLE "ethics" (
-    "ethics_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "ethics_id" INTEGER NOT NULL PRIMARY KEY,
+    "source_id" INTEGER NOT NULL,
     "name" TEXT NOT NULL,
     "ethics_committee" TEXT NOT NULL,
-    "ethics_reference" TEXT NOT NULL
+    "ethics_reference" TEXT NOT NULL,
+    CONSTRAINT "fk_ethics_source_id" FOREIGN KEY ("source_id") REFERENCES "sources" ("source_id") ON DELETE CASCADE ON UPDATE NO ACTION
     );
     """
     DBInterface.execute(db, sql)
     sql = raw"""
     CREATE TABLE "ethics_documents" (
-    "ethics_document_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "ethics_document_id" INTEGER NOT NULL PRIMARY KEY,
     "ethics_id" INTEGER NOT NULL,
     "name" TEXT NOT NULL,
     "description" TEXT NULL,
@@ -354,7 +356,7 @@ function createprotocols(db::SQLite.DB)
     DBInterface.execute(db, sql)
     sql = raw"""
     CREATE TABLE "protocols" (
-    "protocol_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "protocol_id" INTEGER NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
     "description" TEXT NOT NULL,
     "ethics_id" INTEGER,
@@ -381,7 +383,7 @@ function createprotocols(db::SQLite.DB)
     DBInterface.execute(db, sql)
     sql = raw"""
     CREATE TABLE "protocol_documents" (
-    "protocol_document_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "protocol_document_id" INTEGER NOT NULL PRIMARY KEY,
     "protocol_id" INTEGER NOT NULL,
     "name" TEXT NOT NULL,
     "document" BLOB,
@@ -395,9 +397,11 @@ function createprotocols(db::ODBC.Connection)
     sql = raw"""
     CREATE TABLE [ethics] (
         [ethics_id] INT NOT NULL PRIMARY KEY IDENTITY(1,1),
+        [source_id] INT NOT NULL,
         [name] NVARCHAR(255) NOT NULL,
         [ethics_committee] NVARCHAR(255) NOT NULL,
-        [ethics_reference] NVARCHAR(255) NOT NULL
+        [ethics_reference] NVARCHAR(255) NOT NULL,
+        CONSTRAINT [fk_ethics_source_id] FOREIGN KEY ([source_id]) REFERENCES [sources] ([source_id]) ON DELETE CASCADE ON UPDATE NO ACTION
     );
     """
     DBInterface.execute(db, sql)
@@ -467,21 +471,21 @@ Create tables to record data transformations and data ingests
 function createtransformations(db::SQLite.DB)
     sql = raw"""
     CREATE TABLE "transformation_types" (
-    "transformation_type_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "transformation_type_id" INTEGER NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL
     );
     """
     DBInterface.execute(db, sql)
     sql = raw"""
     CREATE TABLE "transformation_statuses" (
-    "transformation_status_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "transformation_status_id" INTEGER NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL
     );
     """
     DBInterface.execute(db, sql)
     sql = raw"""
     CREATE TABLE "transformations" (
-    "transformation_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "transformation_id" INTEGER NOT NULL PRIMARY KEY,
     "transformation_type_id" INTEGER NOT NULL,
     "transformation_status_id" INTEGER NOT NULL,
     "description" TEXT NOT NULL,
@@ -495,7 +499,7 @@ function createtransformations(db::SQLite.DB)
     DBInterface.execute(db, sql)
     sql = raw"""
     CREATE TABLE "data_ingestions" (
-    "data_ingestion_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "data_ingestion_id" INTEGER NOT NULL PRIMARY KEY,
     "source_id" INTEGER NOT NULL,
     "date_received" DATE NOT NULL,
     "description" TEXT,
@@ -570,7 +574,7 @@ Create tables to record value types, variables and vocabularies
 function createvariables(db::SQLite.DB)
     sql = raw"""
     CREATE TABLE "value_types" (
-    "value_type_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "value_type_id" INTEGER NOT NULL PRIMARY KEY,
     "value_type" TEXT NOT NULL,
     "description" TEXT
     );
@@ -585,7 +589,7 @@ function createvariables(db::SQLite.DB)
     DBInterface.execute(db, sql)
     sql = raw"""
     CREATE TABLE "vocabularies" (
-    "vocabulary_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "vocabulary_id" INTEGER NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
     "description" TEXT
     );
@@ -593,7 +597,7 @@ function createvariables(db::SQLite.DB)
     DBInterface.execute(db, sql)
     sql = raw"""
     CREATE TABLE "vocabulary_items" (
-    "vocabulary_item_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "vocabulary_item_id" INTEGER NOT NULL PRIMARY KEY,
     "vocabulary_id" INTEGER NOT NULL,
     "value" TEXT NOT NULL,
     "code" TEXT NOT NULL,
@@ -604,7 +608,7 @@ function createvariables(db::SQLite.DB)
     DBInterface.execute(db, sql)
     sql = raw"""
     CREATE TABLE "domains" (
-    "domain_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "domain_id" INTEGER NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
     "description" TEXT NOT NULL
     );
@@ -619,7 +623,7 @@ function createvariables(db::SQLite.DB)
     DBInterface.execute(db, sql)
     sql = raw"""
     CREATE TABLE "variables" (
-    "variable_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "variable_id" INTEGER NOT NULL PRIMARY KEY,
     "domain_id" INTEGER NOT NULL,
     "name" TEXT NOT NULL,
     "value_type_id" INTEGER NOT NULL,
@@ -643,7 +647,7 @@ function createvariables(db::SQLite.DB)
     DBInterface.execute(db, sql)
     sql = raw"""
     CREATE TABLE "vocabulary_mapping" (
-    "vocabulary_mapping_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "vocabulary_mapping_id" INTEGER NOT NULL PRIMARY KEY,
     "from_vocabulary_item" INTEGER NOT NULL,
     "to_vocabulary_item" INTEGER NOT NULL,
     CONSTRAINT "fk_vocabulary_mapping" FOREIGN KEY ("from_vocabulary_item") REFERENCES "vocabulary_items" ("vocabulary_item_id") ON DELETE NO ACTION ON UPDATE NO ACTION,
@@ -785,7 +789,7 @@ Create tables to record datasets, rows, data and links to the transformations th
 function createdatasets(db::SQLite.DB)
     sql = raw"""
     CREATE TABLE "datasets" (
-    "dataset_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "dataset_id" INTEGER NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
     "date_created" DATE NOT NULL,
     "description" TEXT
@@ -794,7 +798,7 @@ function createdatasets(db::SQLite.DB)
     DBInterface.execute(db, sql)
     sql = raw"""
     CREATE TABLE "datarows" (
-    "row_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "row_id" INTEGER NOT NULL PRIMARY KEY,
     "dataset_id" INTEGER NOT NULL,
     CONSTRAINT "fk_datarows_dataset_id" FOREIGN KEY ("dataset_id") REFERENCES "datasets" ("dataset_id") ON DELETE CASCADE ON UPDATE RESTRICT
     );
@@ -844,7 +848,7 @@ function createdatasets(db::SQLite.DB)
     DBInterface.execute(db, sql)
     sql = raw"""
     CREATE TABLE "ingest_datasets" (
-        ingest_dataset_id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        ingest_dataset_id INTEGER NOT NULL PRIMARY KEY,
         data_ingestion_id INTEGER NOT NULL,
         transformation_id INTEGER NOT NULL,
         dataset_id INTEGER NOT NULL,
@@ -941,7 +945,7 @@ Create tables to record data collection instruments, and their associated protoc
 function createinstruments(db::SQLite.DB)
     sql = raw"""
     CREATE TABLE "instruments" (
-    "instrument_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "instrument_id" INTEGER NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
     "description" TEXT NOT NULL
     );
@@ -1045,7 +1049,7 @@ Create tables to store deaths, and their association with data rows and data ing
 function createdeaths(db::SQLite.DB)
     sql = raw"""
     CREATE TABLE "deaths" (
-    "death_id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "death_id" INTEGER NOT NULL PRIMARY KEY,
     "site_id" INTEGER NOT NULL,
     "external_id" TEXT NOT NULL,
     "data_ingestion_id" INTEGER NOT NULL,
@@ -1128,7 +1132,7 @@ The relationship to the PyCrossVA configuration file columns:
 function createmapping(db::SQLite.DB)
     sql = raw"""
         CREATE TABLE IF NOT EXISTS "variablemaps" (
-            "variablemap_id"	INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+            "variablemap_id"	INTEGER NOT NULL PRIMARY KEY,
             "name"	TEXT NOT NULL,
             "instrument_id"	INTEGER NULL,
             "source_domain" TEXT NULL,
@@ -1139,7 +1143,7 @@ function createmapping(db::SQLite.DB)
     DBInterface.execute(db, sql)
     sql = raw"""
     CREATE TABLE IF NOT EXISTS variablemappings (
-        variablemapping_id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        variablemapping_id INTEGER NOT NULL PRIMARY KEY,
         variablemap_id INTEGER NOT NULL,
         destination_id INTEGER NOT NULL,
         from_id INTEGER NULL,

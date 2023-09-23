@@ -14,7 +14,7 @@ using XLSX
 
 export
     Vocabulary, VocabularyItem,
-    AbstractSource, CHAMPSSource, COMSASource, AbstractDictionary, Ingest,
+    AbstractSource, CHAMPSSource, COMSASource, Ingest,
     ingest_source, ingest_dictionary, ingest_deaths, ingest_data,
     ingest_voc_CHAMPSMITS, add_source, get_source, get_namedkey, get_variable,
     add_domain, get_domain,
@@ -125,7 +125,7 @@ Base.@kwdef struct COMSASource <: AbstractSource
 
     delim::Char = ','
     quotechar::Char = '"'
-    dateformat::String = "dd-u-yyyy" #"mmm dd, yyyy"
+    dateformat::String = "u dd, yyyy" #not "dd-u-yyyy" 
     decimal::Char = '.'
 
     # Protocol - assume file extension pdf
@@ -156,21 +156,6 @@ Base.@kwdef struct COMSASource <: AbstractSource
     domain_description::String = "COMSA verbal autopsy dictionary"
     datadictionaries::Vector{String} = ["Format_Comsa_WHO_VA_20230308"]
     tac_vocabulary::String = ""
-end
-
-# Ok to use a general struct if assume intermediate dictionaries Format_xx.csv given
-Base.@kwdef struct AbstractDictionary
-    domain_name::String = ""
-    domain_description::String = domain_name
-
-    dictionaries::Vector{String}
-    delim::Char = ';'
-    quotechar::Char = '"'
-    dateformat::String = "yyyy-mm-dd"
-    decimal::Char = '.'
-
-    id_col::String = ""
-    site_col::String = ""
 end
 
 Base.@kwdef struct Ingest
@@ -221,7 +206,7 @@ function ingest_source(source::AbstractSource, dbpath::String, dbname::String,
             add_protocols(source, db, datapath)
 
             # Add Ethics
-            add_ethics(source, db, datapath)
+            add_ethics(source, db, datapath; source_id)
 
         end
 
@@ -260,7 +245,9 @@ function ingest_dictionary(source::AbstractSource, dbpath::String, dbname::Strin
             DBInterface.execute(db, "UPDATE variables SET keyrole = 'site_name' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
 
             #Add vocabularies for TAC results with multi-gene
-            ingest_tac_vocabulary(source, db, datapath)
+            if source.tac_vocabulary != ""
+                ingest_tac_vocabulary(source, db, datapath)               
+            end
             println("Completed ingest dictionaries for $(source.name).")
         end
         return nothing
@@ -610,15 +597,19 @@ end
 Ethics document, committee and reference need to be in matching order
 
 """
-function add_ethics(source::AbstractSource, db::DBInterface.Connection, datapath::String)
+function add_ethics(source::AbstractSource, db::DBInterface.Connection, datapath::String; source_id=nothing)
 
+    if isnothing(source_id)
+        source_id = get_source(db, source.name)
+    end
     # Insert ethics names
-    stmt_name = prepareinsertstatement(db, "ethics", ["name", "ethics_committee", "ethics_reference"])
+    stmt_name = prepareinsertstatement(db, "ethics", ["source_id", "name", "ethics_committee", "ethics_reference"])
 
     for (key, value) in source.ethics
-        DBInterface.execute(stmt_name, [value[2], key, value[1]])
+        DBInterface.execute(stmt_name, [source_id, value[2], key, value[1]])
     end
-
+    # get inserted ethics
+    df_ethics = selectdataframe(db, "ethics", ["ethics_id", "name"], ["source_id"], [source_id])
     # Insert ethics documents
     stmt_doc = prepareinsertstatement(db, "ethics_documents", ["ethics_id", "name", "description", "document"])
 
@@ -626,7 +617,8 @@ function add_ethics(source::AbstractSource, db::DBInterface.Connection, datapath
         file = read_data(DocPDF(joinpath(datapath, source.name, source.ethicsfolder), "$(value[2])"))
 
         # Get ethics id
-        ethics_id = get_namedkey(db, "ethics", value[2], Symbol("ethics_id"))
+        ethics_id = df_ethics[df_ethics.name .== value[2], :ethics_id][1]
+        println("Ethics document $(value[2]) ingested. Ethics id = $ethics_id.")
 
         DBInterface.execute(stmt_doc, [ethics_id, value[2], "$key ($(value[1]))", file])
         println("Ethics document $(value[2]) ingested.")
@@ -752,7 +744,7 @@ function add_vocabulary(db, vocabulary::Vocabulary)
 end
 
 """
-read_variables(dict::AbstractDictionary, dictionarypath::String, dictionaryname::String)
+    read_variables(source::AbstractSource, dictionarypath::String, dictionaryname::String)
 
 Read a csv file listing variables, variable descriptions and data types in a dataset.
 
@@ -879,6 +871,7 @@ function add_data_column(db::SQLite.DB, variable_id, value_type, coldata)
     return nothing
 end
 function add_data_column(db::ODBC.Connection, variable_id, value_type, coldata)
+    #println("Add data column variable_id = $variable_id, value_type = $value_type, eltype = $(eltype(coldata.value))")
     if value_type == RDA_TYPE_INTEGER
         stmt = prepareinsertstatement(db, "data", ["row_id", "variable_id", "value_integer"])
     elseif value_type == RDA_TYPE_FLOAT
@@ -887,6 +880,8 @@ function add_data_column(db::ODBC.Connection, variable_id, value_type, coldata)
         stmt = prepareinsertstatement(db, "data", ["row_id", "variable_id", "value_string"])
         if eltype(coldata.value) <: Union{Missing,Number}
             transform!(coldata, :value => ByRow(x -> !ismissing(x) ? string(x) : x) => :value)
+        elseif eltype(coldata.value) <: Union{Missing,TimeType}
+            transform!(coldata, :value => ByRow(x -> !ismissing(x) ? Dates.format(x,"yyyy-mm-dd") : x) => :value)
         else
             transform!(coldata, :value => ByRow(x -> !ismissing(x) ? String(x) : x) => :value)
         end
@@ -1106,12 +1101,39 @@ function dataset_column(db::SQLite.DB, dataset_id::Integer, variable_id::Integer
     stmt = DBInterface.prepare(db, sql)
     return DBInterface.execute(stmt, (dataset_id = dataset_id, variable_id=variable_id)) |> DataFrame
 end
+function get_valuetype(db::ODBC.Connection, variable_id::Integer)
+    sql = """
+    SELECT
+        value_type_id
+    FROM variables
+    WHERE variable_id = ?;
+    """
+    stmt = DBInterface.prepare(db, sql)
+    df = DBInterface.execute(stmt, [variable_id]; iterate_rows=true) |> DataFrame
+    if nrow(df) > 0
+        if df[1, :value_type_id] == RDA_TYPE_INTEGER
+            return "value_integer"
+        elseif df[1, :value_type_id] == RDA_TYPE_FLOAT
+            return "value_float"
+        elseif df[1, :value_type_id] == RDA_TYPE_STRING
+            return "value_string"
+        elseif df[1, :value_type_id] == RDA_TYPE_DATE || df[1, :value_type_id] == RDA_TYPE_TIME || df[1, :value_type_id] == RDA_TYPE_DATETIME
+            return "value_datetime"
+        elseif df[1, :value_type_id] == RDA_TYPE_CATEGORY
+            return "COALESCE(CAST(d.value_integer AS varchar), d.value_string)"
+        else 
+            error("Variable $variable_id has an invalid value type $(df[1, :value_type_id]).")
+        end
+    else
+        error("Variable $variable_id not found.")
+    end
+end
 function dataset_column(db::ODBC.Connection, dataset_id::Integer, variable_id::Integer, variable_name::String)::AbstractDataFrame
-    #TODO fix value type
+    value_column = get_valuetype(db, variable_id)
     sql = """
     SELECT
         d.row_id,
-        d.value as $variable_name
+        $value_column as $variable_name
     FROM data d
       JOIN datarows r ON d.row_id = r.row_id
     WHERE r.dataset_id = ?
@@ -1132,6 +1154,7 @@ function dataset_to_dataframe(db::ODBC.Connection, dataset)::AbstractDataFrame
            df = outerjoin(df, dataset_column(db, dataset, variable.variable_id, variable.variable), on=:row_id)
        end 
     end
+    return df
 end
 """
     dataset_to_arrow(db, dataset, datapath)
@@ -1170,7 +1193,7 @@ end
 
 Return dataset name, given the `dataset_id`
 """
-function get_datasetname(db, dataset)
+function get_datasetname(db::SQLite.DB, dataset)
     sql = """
     SELECT
       name
@@ -1183,6 +1206,21 @@ function get_datasetname(db, dataset)
         return missing
     else
         df = DataFrame(result)
+        return df[1, :name]
+    end
+end
+function get_datasetname(db::ODBC.Connection, dataset)
+    sql = """
+    SELECT
+      name
+    FROM datasets
+    WHERE dataset_id = ?
+    """
+    stmt = DBInterface.prepare(db, sql)
+    df = DBInterface.execute(stmt, [dataset], iterate_rows=true) |> DataFrame
+    if nrow(df) == 0
+        return missing
+    else
         return df[1, :name]
     end
 end

@@ -7,4 +7,4 @@ function showtypetree(T, level=0)
     end
 end
 
-showtypetree(Dates.AbstractString)
+showtypetree(Dates.Date)

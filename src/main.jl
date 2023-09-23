@@ -36,7 +36,7 @@ source = CHAMPSSource()
 CHAMPSIngest = Ingest(source=source,
     death_file="CHAMPS_deid_basic_demographics",
     datasets=Dict("CHAMPS deid basic demographics" => "CHAMPS_deid_basic_demographics",
-        "CHAMPS deid verbal autopsy" => "CHAMPS_deid_verbal_autopsy" ,
+        "CHAMPS deid verbal autopsy" => "CHAMPS_deid_verbal_autopsy",
         "CHAMPS deid decode results" => "CHAMPS_deid_decode_results",
         "CHAMPS deid tac results" => "CHAMPS_deid_tac_results",
         "CHAMPS deid lab results" => "CHAMPS_deid_lab_results"
@@ -64,7 +64,7 @@ check = DBInterface.execute(db, "SELECT * FROM death_rows") |> DataFrame
 nrow(check)
 check = DBInterface.execute(db, "SELECT dataset_id, COUNT(*) As n FROM datarows GROUP BY dataset_id") |> DataFrame
 print(check)
-#
+=#
 
 
 """
@@ -74,39 +74,37 @@ INGEST COMSA DATA
 source = COMSASource()
 @time ingest_source(source, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"])
 
+@time ingest_source(source, ENV["RDA_SERVER"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"], sqlite=false)
+
 
 # Step 2: Ingest data dictionaries, add variables and vocabularies
-COMSAdict = AbstractDictionary(domain_name="COMSA",dictionaries=["Format_Comsa_WHO_VA_20230308"],
-                         id_col = "comsa_id", site_col = "provincia")
-@time ingest_dictionary(COMSAdict, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_DICTIONARY_PATH"])
+@time ingest_dictionary(source, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_DICTIONARY_PATH"],
+    ENV["DATA_INGEST_PATH"], sqlite=true)
+#
+@time ingest_dictionary(source, ENV["RDA_SERVER"], ENV["RDA_DBNAME"], ENV["DATA_DICTIONARY_PATH"],
+    ENV["DATA_INGEST_PATH"], sqlite=false)
 
 
 # Step 3: Ingest deaths to deathrows, return transformation_id and ingestion_id
-COMSAIngest = Ingest(source_name = "COMSA",
-                datafolder = "De_identified_data",
-                death_file = "Comsa_WHO_VA_20230308",
-                death_idcol = "comsa_id",
-                site_col = "provincia",
-                datasets = Dict("COMSA deid verbal autopsy" => "Comsa_WHO_VA_20230308"),
-                delim = ',',
-                quotechar = '"',
-                dateformat = "dd-u-yyyy", #"mmm dd, yyyy"
-                decimal = '.',
-                datainstruments = Dict("5a_2018_COMSA_VASA_ADULTS-EnglishOnly_01262019_clean.pdf" => "Comsa_WHO_VA_20230308",
-                "5a_2018_COMSA_VASA_CHILD-EnglishOnly_12152018Clean.pdf" => "Comsa_WHO_VA_20230308",
-                "5a_2018_COMSA_VASA_SB_NN-EnglishOnly_12152018Clean.pdf" => "Comsa_WHO_VA_20230308",
-                "5a_2018_COMSA_VASA-GenInfo_English_06272018_clean.pdf" => "Comsa_WHO_VA_20230308"),
-                ingest_desc = "Ingest raw COMSA Level-2 Data accessed 20230518",
-                transform_desc = "Ingest of COMSA Level-2 Data",
-                code_reference = "multiple dispatch testing",
-                author = "YC"
-                )
+COMSAIngest = Ingest(source = source,
+    death_file="Comsa_WHO_VA_20230308",
+    datasets=Dict("COMSA deid verbal autopsy" => "Comsa_WHO_VA_20230308"),
+    datainstruments=Dict("5a_2018_COMSA_VASA_ADULTS-EnglishOnly_01262019_clean.pdf" => "Comsa_WHO_VA_20230308",
+        "5a_2018_COMSA_VASA_CHILD-EnglishOnly_12152018Clean.pdf" => "Comsa_WHO_VA_20230308",
+        "5a_2018_COMSA_VASA_SB_NN-EnglishOnly_12152018Clean.pdf" => "Comsa_WHO_VA_20230308",
+        "5a_2018_COMSA_VASA-GenInfo_English_06272018_clean.pdf" => "Comsa_WHO_VA_20230308"),
+    ingest_desc="Ingest raw COMSA Level-2 Data accessed 20230518",
+    transform_desc="Ingest of COMSA Level-2 Data",
+    code_reference="RDAIngest.ingest_data",
+    author="Kobus Herbst; YUE CHU"
+)
 
-meta_info = ingest_deaths(COMSAIngest,ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"])
+ingestion_id_sqlite = ingest_deaths(COMSAIngest, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"]; sqlite=true)
+ingestion_id = ingest_deaths(COMSAIngest, ENV["RDA_SERVER"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"]; sqlite=false)
 
 # Step 4: Import datasets, and link datasets to deaths
 
-@time ingest_data(COMSAIngest, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"],
-                meta_info["transformation_id"], meta_info["ingestion_id"])
+@time ingest_data(COMSAIngest, ENV["RDA_DATABASE_PATH"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"]; ingestion_id=ingestion_id_sqlite, sqlite=true)
+@time ingest_data(COMSAIngest, ENV["RDA_SERVER"], ENV["RDA_DBNAME"], ENV["DATA_INGEST_PATH"]; ingestion_id=ingestion_id, sqlite=false)
 
-=#
+#
