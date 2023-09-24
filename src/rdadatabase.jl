@@ -1,5 +1,5 @@
 """
-    createdatabase(path, name)
+    createdatabase(path, name; replace=false, sqlite=true)
 
 Creates a database to store the information contained in the Reference Death Archive (RDA)
 By default a sqlite database is created, but this can be changed by setting the sqlite argument to false, 
@@ -25,6 +25,11 @@ function createdatabase(path, name; replace=false, sqlite=true)
         DBInterface.close!(db)
     end
 end
+"""
+    createdatabasesqlite(path, name; replace=replace)::SQLite.DB
+
+Create an sqlite database on path with name, if replace = true then replace any existing database
+"""
 function createdatabasesqlite(path, name; replace=replace)::SQLite.DB
     file = joinpath(path, "$name.sqlite")
     existed = isfile(file)
@@ -40,6 +45,11 @@ function createdatabasesqlite(path, name; replace=replace)::SQLite.DB
     end
     return SQLite.DB(file)
 end
+"""
+    createdatabasesqlserver(server, name; replace=replace)::ODBC.Connection
+
+Create a SQL Server database on server with name, if replace = true then replace any existing database
+"""
 function createdatabasesqlserver(server, name; replace=replace)::ODBC.Connection
     master = ODBC.Connection("Driver=ODBC Driver 17 for SQL Server;Server=$server;Database=master;Trusted_Connection=yes;")
     if replace
@@ -105,6 +115,11 @@ function get_table(db::SQLite.DB, table::String)::AbstractDataFrame
     df = DBInterface.execute(db, sql) |> DataFrame
     return df
 end
+"""
+    get_table(db::ODBC.Connection, table::String)::AbstractDataFrame
+
+Retrieve table `table` as a DataFrame from `db`
+"""
 function get_table(db::ODBC.Connection, table::String)::AbstractDataFrame
     sql = "SELECT * FROM $(table)"
     df = DBInterface.execute(db, sql, iterate_rows=true) |> DataFrame
@@ -138,6 +153,11 @@ function savedataframe(con::ODBC.Connection, df::AbstractDataFrame, table)
         DBInterface.execute(stmt, Vector(row))
     end
 end
+"""
+    savedataframe(con::SQLite.DB, df::AbstractDataFrame, table)
+
+Save a DataFrame to a database table, the names of the dataframe columns should be identical to the table column names in the database
+"""
 function savedataframe(con::SQLite.DB, df::AbstractDataFrame, table)
     colnames = names(df)
     paramnames = map(makeparam, colnames) #add @ to column names
@@ -167,6 +187,11 @@ function prepareinsertstatement(db::ODBC.Connection, table, columns)
     sql = "INSERT INTO $table ($(join(columns, ", "))) VALUES ($(join(paramnames, ", ")));"
     return DBInterface.prepare(db, sql)
 end
+"""
+    insertwithidentity(db::ODBC.Connection, table, columns, values, keycol)
+
+Insert a record, returning the identity column value
+"""
 function insertwithidentity(db::ODBC.Connection, table, columns, values, keycol)
     paramnames = map(makeodbcparam, columns) # ? for each prameter
     sql = """
@@ -178,6 +203,11 @@ function insertwithidentity(db::ODBC.Connection, table, columns, values, keycol)
     df = DBInterface.execute(stmt, values; iterate_rows=true) |> DataFrame
     return df[1, :last_id]
 end
+"""
+    insertwithidentity(db::SQLite.DB, table, columns, values, keycol)
+
+Insert a record, returning the identity column value
+"""
 function insertwithidentity(db::SQLite.DB, table, columns, values, keycol)
     paramnames = map(makeparam, columns)
     sql = """
@@ -187,6 +217,11 @@ function insertwithidentity(db::SQLite.DB, table, columns, values, keycol)
     stmt = DBInterface.prepare(db, sql)
     return DBInterface.lastrowid(DBInterface.execute(stmt, values))
 end
+"""
+    insertdata(db::DBInterface.Connection, table, columns, values)
+
+Insert a set of values into a table, columns list the names of the columns to insert, and values the values to insert
+"""
 function insertdata(db::DBInterface.Connection, table, columns, values)
     stmt = prepareinsertstatement(db, table, columns)
     return DBInterface.execute(stmt, values)
@@ -226,10 +261,20 @@ function prepareselectstatement(db::ODBC.Connection, table, columns::Vector{Stri
         return DBInterface.prepare(db, select_clause * where_clause)
     end
 end
+"""
+    selectdataframe(db::SQLite.DB, table::String, columns::Vector{String}, filter::Vector{String}, filtervalues::DBInterface.StatementParams)::AbstractDataFrame
+
+Return a dataframe from a table, with 0 to n columns to filter on
+"""
 function selectdataframe(db::SQLite.DB, table::String, columns::Vector{String}, filter::Vector{String}, filtervalues::DBInterface.StatementParams)::AbstractDataFrame
     stmt = prepareselectstatement(db, table, columns, filter)
     return DBInterface.execute(stmt, filtervalues) |> DataFrame
 end
+"""
+    selectdataframe(db::ODBC.Connection, table::String, columns::Vector{String}, filter::Vector{String}, filtervalues::DBInterface.StatementParams)::AbstractDataFrame
+
+Return a dataframe from a table, with 0 to n columns to filter on
+"""
 function selectdataframe(db::ODBC.Connection, table::String, columns::Vector{String}, filter::Vector{String}, filtervalues::DBInterface.StatementParams)::AbstractDataFrame
     stmt = prepareselectstatement(db, table, columns, filter)
     return DBInterface.execute(stmt, filtervalues; iterate_rows=true) |> DataFrame
@@ -248,6 +293,11 @@ function selectsourcesites(db::SQLite.DB, source::AbstractSource)
     """
     return DBInterface.execute(db, sql) |> DataFrame
 end
+"""
+    selectsourcesites(db::ODBC.Connection, source::AbstractSource)
+
+Returns a dataframe with the sites associated with a source
+"""
 function selectsourcesites(db::ODBC.Connection, source::AbstractSource)
     sql = """
     SELECT s.* FROM sites s
@@ -289,6 +339,11 @@ function createsources(db::SQLite.DB)
     DBInterface.execute(db, sql)
     return nothing
 end
+"""
+    createsources(db::ODBC.Connection)
+
+Creates tables to record a source and associated site/s for deaths contributed to the RDA
+"""
 function createsources(db::ODBC.Connection)
     sql = raw"""
     CREATE TABLE [sources] (
@@ -393,6 +448,11 @@ function createprotocols(db::SQLite.DB)
     DBInterface.execute(db, sql)
     return nothing
 end
+"""
+    createprotocols(db::ODBC.Connection)
+
+Create tables to record information about protocols and the ethics approvals for those protocols
+"""
 function createprotocols(db::ODBC.Connection)
     sql = raw"""
     CREATE TABLE [ethics] (
@@ -513,10 +573,25 @@ function createtransformations(db::SQLite.DB)
     savedataframe(db, statuses, "transformation_statuses")
     return nothing
 end
+"""
+    inittypes()
+
+Default transformation types
+"""
 inittypes() = DataFrame([(transformation_type_id=RDA_TRANSFORMATION_TYPE_INGEST, name="Raw data ingest"),
     (transformation_type_id=RDA_TRANSFORMATION_TYPE_TRANSFORM, name="Dataset transform")])
+"""
+    initstatuses()
+
+Default transformation statuses
+"""
 initstatuses() = DataFrame([(transformation_status_id=RDA_TRANSFORMATION_STATUS_UNVERIFIED, name="Unverified"),
     (transformation_status_id=RDA_TRANSFORMATION_STATUS_VERIFIED, name="Verified")])
+"""
+    createtransformations(db::ODBC.Connection)
+
+Create tables to record data transformations and data ingests
+"""
 function createtransformations(db::ODBC.Connection)
     sql = raw"""
     CREATE TABLE [transformation_types] (
@@ -659,6 +734,11 @@ function createvariables(db::SQLite.DB)
     SQLite.load!(types, db, "value_types")
     return nothing
 end
+"""
+    createvariables(db::ODBC.Connection)
+
+Create tables to record value types, variables and vocabularies
+"""
 function createvariables(db::ODBC.Connection)
     sql = raw"""
     CREATE TABLE [value_types] (
@@ -754,6 +834,11 @@ function createvariables(db::ODBC.Connection)
     identityinsertoff(db, "value_types")
     return nothing
 end
+"""
+    initvalue_types()
+
+Add default value types
+"""
 initvalue_types() = DataFrame([(value_type_id=RDA_TYPE_INTEGER, value_type="Integer", description=""),
     (value_type_id=RDA_TYPE_FLOAT, value_type="Float", description=""),
     (value_type_id=RDA_TYPE_STRING, value_type="String", description=""),
@@ -772,6 +857,11 @@ function identityinsertoff(db::ODBC.Connection, table::String)
     DBInterface.execute(db, sql)
     return nothing
 end
+"""
+    updatevariable_vocabulary(db::DBInterface.Connection, name, domain_id, vocabulary_id)
+
+Update variable vocabulary
+"""
 function updatevariable_vocabulary(db::DBInterface.Connection, name, domain_id, vocabulary_id)
     sql = """
     UPDATE variables
@@ -860,6 +950,11 @@ function createdatasets(db::SQLite.DB)
     DBInterface.execute(db, sql)
     return nothing
 end
+"""
+    createdatasets(db::ODBC.Connection)
+
+Create tables to record datasets, rows, data and links to the transformations that use/created the datasets
+"""
 function createdatasets(db::ODBC.Connection)
     sql = raw"""
     CREATE TABLE [datasets] (
@@ -992,6 +1087,11 @@ function createinstruments(db::SQLite.DB)
     DBInterface.execute(db, sql)
     return nothing
 end
+"""
+    createinstruments(db::ODBC.Connection)
+
+Create tables to record data collection instruments, and their associated protocols and datasets
+"""
 function createinstruments(db::ODBC.Connection)
     sql = raw"""
     CREATE TABLE [instruments] (
@@ -1079,6 +1179,11 @@ function createdeaths(db::SQLite.DB)
     DBInterface.execute(db, sql)
     return nothing
 end
+"""
+    createdeaths(db::ODBC.Connection)
+
+Create tables to store deaths, and their association with data rows and data ingests
+"""
 function createdeaths(db::ODBC.Connection)
     sql = raw"""
     CREATE TABLE [deaths] (
@@ -1111,9 +1216,8 @@ function createdeaths(db::ODBC.Connection)
     return nothing
 end
 
-
 """
-    createmapping(db)
+    createmapping(db::SQLite.DB)
 
 Create the table required for variable mapping. This table is used to map variables from one instrument to another. The table is created in the database provided as an argument.
 The variable mapping is based on the PyCrossVA approach.
@@ -1160,6 +1264,23 @@ function createmapping(db::SQLite.DB)
     return nothing
 end
 
+"""
+    createmapping(db::ODBC.Connection)
+
+Create the table required for variable mapping. This table is used to map variables from one instrument to another. The table is created in the database provided as an argument.
+The variable mapping is based on the PyCrossVA approach.
+
+The relationship to the PyCrossVA configuration file columns:
+
+  * New Column Name = destination_id - the variable_id of the new column
+  * New Column Documentation = Stored in the variable table
+  * Source Column ID = from_id - the variable_id of the source variable
+  * Source Column Documentation = will be in the variables table
+  * Relationship = operator - the operator to be used to create the new variable
+  * Condition = operants - the operants to be used with the operator
+  * Prerequisite = prerequisite_id - the variable_id of the prerequisite variable
+
+"""
 function createmapping(db::ODBC.Connection)
     sql = raw"""
     IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'variablemaps')

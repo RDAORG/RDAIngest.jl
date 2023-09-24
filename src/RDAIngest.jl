@@ -68,8 +68,13 @@ struct DocPDF <: DataDocument
     name::String
 end
 
-
+"""
+Provide a source struct for source specific information
+"""
 abstract type AbstractSource end
+"""
+Provide CHAMPS specific information
+"""
 Base.@kwdef struct CHAMPSSource <: AbstractSource
     name::String = "CHAMPS"
     datafolder::String = "De_identified_data"
@@ -112,7 +117,9 @@ Base.@kwdef struct CHAMPSSource <: AbstractSource
         "Format_CHAMPS_deid_lab_results"]
     tac_vocabulary::String = "CHAMPS_deid_tac_vocabulary.xlsx"
 end
-
+"""
+Provide CHAMPS specific information
+"""
 Base.@kwdef struct COMSASource <: AbstractSource
     name::String = "COMSA"
     datafolder::String = "De_identified_data"
@@ -157,7 +164,9 @@ Base.@kwdef struct COMSASource <: AbstractSource
     datadictionaries::Vector{String} = ["Format_Comsa_WHO_VA_20230308"]
     tac_vocabulary::String = ""
 end
-
+"""
+Provide ingest specific information
+"""
 Base.@kwdef struct Ingest
     source::AbstractSource
 
@@ -227,14 +236,14 @@ function ingest_dictionary(source::AbstractSource, dbpath::String, dbname::Strin
 
     try
         DBInterface.transaction(db) do
-            println("Ingest dictionaries for $(source.name). sqlite = $sqlite")
+            @info "Ingest dictionaries for $(source.name). sqlite = $sqlite"
             domain = add_domain(db, source.domain_name, source.domain_description)
 
             # Add variables
             for filename in source.datadictionaries
                 variables = read_variables(source, dictionarypath, filename)
                 add_variables(variables, db, domain)
-                println("Variables from $filename ingested.")
+                @info "Variables from $filename ingested."
             end
 
             # Mark key fields for easier reference later
@@ -248,7 +257,6 @@ function ingest_dictionary(source::AbstractSource, dbpath::String, dbname::Strin
             if source.tac_vocabulary != ""
                 ingest_tac_vocabulary(source, db, datapath)               
             end
-            println("Completed ingest dictionaries for $(source.name).")
         end
         return nothing
     finally
@@ -256,6 +264,11 @@ function ingest_dictionary(source::AbstractSource, dbpath::String, dbname::Strin
     end
 end
 
+"""
+    ingest_tac_vocabulary(source::AbstractSource, db, datapath)
+
+TBW
+"""
 function ingest_tac_vocabulary(source::AbstractSource, db, datapath)
     domain_id = get_domain(db, source.domain_name)
     xf = XLSX.readxlsx(joinpath(datapath, source.name, source.datafolder, source.tac_vocabulary))
@@ -283,14 +296,13 @@ function ingest_tac_vocabulary(source::AbstractSource, db, datapath)
             DBInterface.execute(stmt, [row.vocabulary_id, row1.value, row1.code, row1.description])
         end
     end
-    println("Completed ingest tac_vocabularies for $(source.name).")
 end
 
 """
+    ingest_deaths(ingest::Ingest, dbpath::String, dbname::String, datapath::String; sqlite=true)
+
 Step 3: 
 Ingest deaths to deathrows, return transformation_id and ingestion_id
-ingest_deaths(ingest::Ingest, db::SQLite.DB, datapath::String)
-
 """
 function ingest_deaths(ingest::Ingest, dbpath::String, dbname::String, datapath::String; sqlite=true)
     db = opendatabase(dbpath, dbname; sqlite)
@@ -316,7 +328,6 @@ function ingest_deaths(ingest::Ingest, dbpath::String, dbname::String, datapath:
                     [] => Returns(ingestion_id) => :data_ingestion_id, copycols=false), "deaths")
 
 
-            println("Death data $(ingest.death_file) ingested.")
             return ingestion_id #, transformation_id
         end
 
@@ -359,16 +370,16 @@ function ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::S
 
                 # Link to deathrows
                 if !death_in_ingest(db, ingestion_id)
-                    println("Death data is not part of currrent data ingest $ingestion_id")
+                    @info "Death data is not part of currrent data ingest $ingestion_id"
                     death_ingestion_id = get_last_deathingest(db, source_id)
-                    println("Death ingestion id not specified. By default, use lastest ingested deaths from source $(ingest.source.name) from ingestion id $death_ingestion_id.")
+                    @info "Death ingestion id not specified. By default, use lastest ingested deaths from source $(ingest.source.name) from ingestion id $death_ingestion_id."
                 else
                     death_ingestion_id = ingestion_id
                 end
-                println("Linking dataset $dataset_name to deathrows from ingestion id $death_ingestion_id, dataset_id = $dataset_id, death_idvar = $death_idvar")
+                @info "Linking dataset $dataset_name to deathrows from ingestion id $death_ingestion_id, dataset_id = $dataset_id, death_idvar = $death_idvar"
                 link_deathrows(db, death_ingestion_id, dataset_id, death_idvar)
 
-                println("Dataset $dataset_name imported and linked to deathrows.")
+                @info "Dataset $dataset_name imported and linked to deathrows."
 
             end
 
@@ -435,6 +446,11 @@ function get_variable(db::ODBC.Connection, domain, name)
         return result[1, :variable_id]
     end
 end
+"""
+    get_variable(db::SQLite.DB, domain, name)
+
+Returns the `variable_id` of variable named `name` in domain with id `domain`
+"""
 function get_variable(db::SQLite.DB, domain, name)
     stmt = prepareselectstatement(db, "variables", ["variable_id"], ["domain_id", "name"])
     result = DBInterface.execute(stmt, [domain, name]) |> DataFrame
@@ -463,14 +479,12 @@ end
 
 Return the domain_id for domain named `domain_name`
 """
-function get_domain(db::DBInterface.Connection, domain_name::String)
-    return get_namedkey(db, "domains", domain_name, Symbol("domain_id"))
-end
+get_domain(db::DBInterface.Connection, domain_name::String) = get_namedkey(db, "domains", domain_name, Symbol("domain_id"))
 
 """
     add_sites(source::CHAMPSSource, db::DBInterface.Connection, sourceid::Integer, datapath::String)
 
-Add sites and country iso2 codes to sites table
+Add CHAMPS sites and country iso2 codes to sites table
 """
 function add_sites(source::CHAMPSSource, db::DBInterface.Connection, sourceid::Integer, datapath::String)
     sites = read_sitedata(source, datapath, sourceid)
@@ -482,13 +496,13 @@ function add_sites(source::CHAMPSSource, db::DBInterface.Connection, sourceid::I
     # ODBC can't deal with InlineStrings
     transform!(sites, :site_name => ByRow(x -> String(x)) => :site_name, :country_iso2 => ByRow(x -> String(x)) => :country_iso2)
     savedataframe(db, sites, "sites")
-    println("Site names and country iso2 codes ingested.")
+    @info "Site names and country iso2 codes ingested."
     return nothing
 end
 """
     add_sites(source::COMSASource, db::DBInterface.Connection, sourceid::Integer, datapath::String)
 
-Add sites and country iso2 codes to sites table
+Add COMSA sites and country iso2 codes to sites table
 """
 function add_sites(source::COMSASource, db::DBInterface.Connection, sourceid::Integer, datapath::String)
     sites = read_sitedata(source, datapath, sourceid)
@@ -503,7 +517,7 @@ function add_sites(source::COMSASource, db::DBInterface.Connection, sourceid::In
         # ODBC can't deal with InlineStrings
         transform!(sites, :site_name => ByRow(x -> String(x)) => :site_name, :country_iso2 => ByRow(x -> String(x)) => :country_iso2)
         savedataframe(db, sites, "sites")
-        println("Site names and country iso2 codes ingested.")
+        @info "Site names and country iso2 codes ingested."
     end
     return nothing
 end
@@ -557,7 +571,7 @@ function add_protocols(source::AbstractSource, db, datapath::String)
         # Add protocol documents
         file = read_data(DocPDF(joinpath(datapath, source.name, source.protocolfolder), "$value"))
         DBInterface.execute(stmt_doc, [protocol_id, value, file])
-        println("Protocol document $value ingested.")
+        @info "Protocol document $value ingested."
     end
     return nothing
 end
@@ -586,7 +600,7 @@ function add_instruments(source::AbstractSource, db, datapath::String)
         # Add instrument documents
         file = read_data(DocPDF(joinpath(datapath, source.name, source.instrumentfolder), "$value"))
         DBInterface.execute(stmt_doc, [instrument_id, value, file])
-        println("Instrument document $value ingested.")
+        @info "Instrument document $value ingested."
     end
     return nothing
 end
@@ -618,10 +632,9 @@ function add_ethics(source::AbstractSource, db::DBInterface.Connection, datapath
 
         # Get ethics id
         ethics_id = df_ethics[df_ethics.name .== value[2], :ethics_id][1]
-        println("Ethics document $(value[2]) ingested. Ethics id = $ethics_id.")
 
         DBInterface.execute(stmt_doc, [ethics_id, value[2], "$key ($(value[1]))", file])
-        println("Ethics document $(value[2]) ingested.")
+        @info "Ethics document $(value[2]) ingested. Ethics id = $ethics_id."
     end
     return nothing
 end
@@ -817,7 +830,7 @@ function save_dataset(db::DBInterface.Connection, dataset::AbstractDataFrame, na
 
     variables = lookup_variables(db, names(dataset), domain_id)
     transform!(variables, [:variable_id, :value_type_id] => ByRow((x, y) -> Tuple([x, y])) => :variable_id_type)
-    #println(show(variables))
+ 
     var_lookup = Dict{String,Tuple{Integer,Integer}}(zip(variables.name, variables.variable_id_type))
 
     # Add dataset entry to datasets table
@@ -843,7 +856,7 @@ function save_dataset(db::DBInterface.Connection, dataset::AbstractDataFrame, na
         #println("Saving column $col : type=$(eltype(coldata.value)) : value_type=$value_type : $name.")
         add_data_column(db, variable_id, value_type, coldata)
     end
-    println("Dataset $name ingested.")
+    @info "Dataset $name ingested."
     return dataset_id
 end
 
@@ -870,6 +883,11 @@ function add_data_column(db::SQLite.DB, variable_id, value_type, coldata)
     end
     return nothing
 end
+"""
+    add_data_column(db::ODBC.Connection, variable_id, value_type, coldata)
+
+Insert data for a column of the source dataset
+"""
 function add_data_column(db::ODBC.Connection, variable_id, value_type, coldata)
     #println("Add data column variable_id = $variable_id, value_type = $value_type, eltype = $(eltype(coldata.value))")
     if value_type == RDA_TYPE_INTEGER
@@ -932,7 +950,7 @@ function link_instruments(db::DBInterface.Connection, instrument_name::String, d
 
     insertdata(db, "instrument_datasets", ["instrument_id", "dataset_id"], [instrument_id, dataset_id])
 
-    println("Linked dataset $dataset_name to instrument $instrument_name")
+    @info "Linked dataset $dataset_name to instrument $instrument_name"
 
     return nothing
 end
@@ -962,6 +980,12 @@ function link_deathrows(db::SQLite.DB, ingestion_id, dataset_id, death_identifie
 
     return nothing
 end
+"""
+    link_deathrows(db::ODBC.Connection, ingestion_id, dataset_id, death_identifier)
+
+Insert records into `deathrows` table to link dataset `dataset_id` to `deaths` table. Limited to a specific ingest.
+`death_identifier` is the variable in the dataset that corresponds to the `external_id` of the death.
+"""
 function link_deathrows(db::ODBC.Connection, ingestion_id, dataset_id, death_identifier)
 
     sql = """
@@ -1002,7 +1026,6 @@ dataset_in_ingest(db, dataset_id, ingestion_id)
 
 If dataset_id is part of ingestion_id
 """
-
 function dataset_in_ingest(db, dataset_id, ingestion_id)
     df = selectdataframe(db, "ingest_datasets", ["COUNT(*)"], ["data_ingestion_id", "dataset_id"], [ingestion_id, dataset_id]) |> DataFrame
     return nrow(df) > 0 && df[1, 1] > 0
@@ -1062,6 +1085,11 @@ function dataset_to_dataframe(db::SQLite.DB, dataset)::AbstractDataFrame
     long = DBInterface.execute(stmt, (dataset = dataset)) |> DataFrame
     return unstack(long, :row_id, :variable, :value)
 end
+"""
+    dataset_variables(db::SQLite.DB, dataset)::AbstractDataFrame
+
+Return the list of variables in a dataset
+"""
 function dataset_variables(db::SQLite.DB, dataset)::AbstractDataFrame
     sql = """
     SELECT
@@ -1075,6 +1103,11 @@ function dataset_variables(db::SQLite.DB, dataset)::AbstractDataFrame
     stmt = DBInterface.prepare(db, sql)
     return DBInterface.execute(stmt, (dataset = dataset)) |> DataFrame
 end
+"""
+    dataset_variables(db::ODBC.Connection, dataset)::AbstractDataFrame
+
+Return the list of variables in a dataset
+"""
 function dataset_variables(db::ODBC.Connection, dataset)::AbstractDataFrame
     sql = """
     SELECT
@@ -1088,6 +1121,11 @@ function dataset_variables(db::ODBC.Connection, dataset)::AbstractDataFrame
     stmt = DBInterface.prepare(db, sql)
     return DBInterface.execute(stmt, [dataset]; iterate_rows=true) |> DataFrame
 end
+"""
+    dataset_column(db::SQLite.DB, dataset_id::Integer, variable_id::Integer, variable_name::String)::AbstractDataFrame
+
+Return one column of data in a dataset (representing a variable)
+"""
 function dataset_column(db::SQLite.DB, dataset_id::Integer, variable_id::Integer, variable_name::String)::AbstractDataFrame
     sql = """
     SELECT
@@ -1101,6 +1139,11 @@ function dataset_column(db::SQLite.DB, dataset_id::Integer, variable_id::Integer
     stmt = DBInterface.prepare(db, sql)
     return DBInterface.execute(stmt, (dataset_id = dataset_id, variable_id=variable_id)) |> DataFrame
 end
+"""
+    get_valuetype(db::ODBC.Connection, variable_id::Integer)
+
+Get the data type of a variable
+"""
 function get_valuetype(db::ODBC.Connection, variable_id::Integer)
     sql = """
     SELECT
@@ -1128,6 +1171,11 @@ function get_valuetype(db::ODBC.Connection, variable_id::Integer)
         error("Variable $variable_id not found.")
     end
 end
+"""
+    dataset_column(db::ODBC.Connection, dataset_id::Integer, variable_id::Integer, variable_name::String)::AbstractDataFrame
+
+Return one column of data in a dataset (representing a variable)
+"""
 function dataset_column(db::ODBC.Connection, dataset_id::Integer, variable_id::Integer, variable_name::String)::AbstractDataFrame
     value_column = get_valuetype(db, variable_id)
     sql = """
@@ -1142,6 +1190,11 @@ function dataset_column(db::ODBC.Connection, dataset_id::Integer, variable_id::I
     stmt = DBInterface.prepare(db, sql)
     return DBInterface.execute(stmt, [dataset_id, variable_id]; iterate_rows=true) |> DataFrame
 end
+"""
+    dataset_to_dataframe(db::ODBC.Connection, dataset)::AbstractDataFrame
+
+Extract a dataset into a DataFrame
+"""
 function dataset_to_dataframe(db::ODBC.Connection, dataset)::AbstractDataFrame
     variables = dataset_variables(db, dataset)
     df = DataFrame()
@@ -1209,6 +1262,11 @@ function get_datasetname(db::SQLite.DB, dataset)
         return df[1, :name]
     end
 end
+"""
+    get_datasetname(db::ODBC.Connection, dataset)
+
+Get the name of a dataset
+"""
 function get_datasetname(db::ODBC.Connection, dataset)
     sql = """
     SELECT
@@ -1255,6 +1313,11 @@ function get_last_deathingest(db::SQLite.DB, source_id::Integer)
         error("Death from source $source_id hasn't been ingested.")
     end
 end
+"""
+    get_last_deathingest(db::ODBC.Connection, source_id::Integer)
+
+Get ingestion id for latest death ingestion for source
+"""
 function get_last_deathingest(db::ODBC.Connection, source_id::Integer)
     sql = """
     SELECT TOP 1
