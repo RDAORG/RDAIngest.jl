@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../../../Users/kobus/.julia/dev/ODBC"
+		}
+	],
+	"settings": {
+		"julia.environmentPath": "c:\\Source\\Repos\\RDAIngest.jl"
+	}
+}
