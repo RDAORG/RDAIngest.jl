@@ -1,14 +1,14 @@
 ## Introduction
 
-This package creates and ingest data for the *Reference Death Archive* into an SQLite database.
+This package creates and ingest data for the *Reference Death Archive* into an SQLite or SQL Server database.
 
-Database creation is done using the [`createdatabase`](@ref) function.
+Database creation is done using the [`createdatabase`](@ref) function. Set `sqlite=false` to create a SQL Server database.
 
 Data ingestion is specific to a source, where a *source* is an entity that distributes/shares data related to a death, for example, verbal autopsy or assigned cause of death data.
 
-The current version of **RDAIngest.jl** can ingest the *Level 2: De-identified data* distributed by [CHAMPS](https://champshealth.org/data/).
+The current version of **RDAIngest.jl** can ingest the *Level 2: De-identified data* distributed by [CHAMPS](https://champshealth.org/data/) and [COMSA](https://comsamozambique.org/data-access).
 
-See the [`ingest_champs`](@ref) function.
+See the [`ingest_source`](@ref) function.
 
 ## Database Structure
 
@@ -85,3 +85,11 @@ The format of the file is (the field separator is a semi-colon):
  * `Key` : `Yes` if the variable is a key to the data
  * `Description`: The description of the variable, if the description contains more than one line, in the case of a categorical variable, the vocabulary appears from line two onwards as comma separated text containing code and description.
  * `Note`: A note regarding the variable
+ * `DataType`: The variable type
+    * `RDA_TYPE_INTEGER` = 1
+    * `RDA_TYPE_FLOAT` = 2
+    * `RDA_TYPE_STRING` = 3
+    * `RDA_TYPE_DATE` = 4
+    * `RDA_TYPE_DATETIME` = 5
+    * `RDA_TYPE_TIME` = 6
+    * `RDA_TYPE_CATEGORY` = 7
