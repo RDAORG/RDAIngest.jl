@@ -25,12 +25,20 @@ The primary aim of this project is to achieve the following:
 3. **Simplification of RDA Modules**: Within the three key modules of RDA, namely, RDA Ingest, RDA Clean, and RDA Convert, strive to make each step more straightforward and user-friendly. This simplification will improve usability and accessibility. 
 
 
-### 1. Data Structure & Scheme
+### 1. Data Structure & Schema
 The conceptual model of the *Reference Death Archive* is presented in Figure 1.
 ![Fig 1: RDA Data Archiving Schema](RDA_Datamodel_V2.0.png)
 
 This diagram provides an overview of how different tables are interconnected within the system. In the diagram, tables are depicted as boxes, with their names placed at the upper section of each box. Field names are located in the lower section. Primary keys are indicated with "key" signs next to the relevant items, and relationships between tables are depicted using "crows feet" lines. These lines connect tables based on foreign key relationships, with the many side of the relationship represented by the crow's foot symbol. Additionally, each variable is associated with a defined data type to ensure data consistency.
 
+#### The schema is color-coded based on its orientation and sources.
+   - <span style="color:#2E86C1"> Blue </span>: Sources and Sites
+   - <span style="color:#8E44AD "> Purple </span>:  Site Protocals and Ethic documents
+   - <span style="color:#1E8449"> Green </span>: Instrument documents
+   - <span style="color:pink"> Pink </span>: Transformation
+   - <span style="color:#F8C471"> Orange </span>: Dataset
+   - <span style="color:#EC7063"> Salmon </span>: Death information
+   - <span style="color:lightgreen"> Lightgreen </span>: Variables and mappings 
 
 
 ### 2. Sources
