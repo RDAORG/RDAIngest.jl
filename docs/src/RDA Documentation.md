@@ -1,4 +1,5 @@
 # Reference Death Archive (RDA)
+
 The Reference Death Archive (RDA) project has been specifically designed to cater to users of the Verbal Autopsy HDSS dataset. RDA's primary objective is to streamline and automate the process of ingesting Verbal Autopsy data into the core data archive while facilitating its conversion to the ICD (International Classification of Diseases) standards through the InterVA and inSilico VA systems.
 
 RDA is engineered using Julia code and SQLite, ensuring consistency and rapid data processing. Its versatility makes it accessible and beneficial for a wide range of Verbal Autopsy users, simplifying the otherwise complex data management tasks.
