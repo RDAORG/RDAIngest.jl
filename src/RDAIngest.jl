@@ -24,7 +24,8 @@ export
     add_ingestion, add_transformation, add_dataset_ingestion, add_transformation_output,
     add_data_column, lookup_variables, add_datasets, add_datarows,
     get_last_deathingest, read_data, dataset_to_dataframe, dataset_to_arrow, dataset_to_csv, get_datasetname,
-    savedataframe, createdatabase, opendatabase #, 
+    savedataframe, createdatabase, opendatabase ,
+    save_dataset #, 
 #get_table, createsources, createprotocols, createtransformations,
 #createvariables, createdatasets, createinstruments, createdeaths
 
@@ -825,6 +826,7 @@ end
 
 Insert dataframe containing dataset into RDA database and returns the dataset_id
 """
+
 function save_dataset(db::DBInterface.Connection, dataset::AbstractDataFrame, name::String, description::String,
     domain_id::Integer, transformation_id::Integer, ingestion_id::Integer)::Integer
 
