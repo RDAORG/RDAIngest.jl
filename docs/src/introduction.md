@@ -8,7 +8,7 @@ Data ingestion is specific to a source, where a *source* is an entity that distr
 
 The current version of **RDAIngest.jl** can ingest the *Level 2: De-identified data* distributed by [CHAMPS](https://champshealth.org/data/).
 
-See the [`ingest_champs`](@ref) function.
+See the [`ingest_source`](@ref) function.
 
 ## Database Structure
 
