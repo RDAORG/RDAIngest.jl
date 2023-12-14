@@ -236,14 +236,14 @@ function ingest_dictionary(source::AbstractSource, dbpath::String, dbname::Strin
 
     try
         DBInterface.transaction(db) do
-            @info "Ingest dictionaries for $(source.name). sqlite = $sqlite"
+            # @info "Ingest dictionaries for $(source.name). sqlite = $sqlite"
             domain = add_domain(db, source.domain_name, source.domain_description)
 
             # Add variables
             for filename in source.datadictionaries
                 variables = read_variables(source, dictionarypath, filename)
                 add_variables(variables, db, domain)
-                @info "Variables from $filename ingested."
+                # @info "Variables from $filename ingested."
             end
 
             # Mark key fields for easier reference later
@@ -370,16 +370,16 @@ function ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::S
 
                 # Link to deathrows
                 if !death_in_ingest(db, ingestion_id)
-                    @info "Death data is not part of currrent data ingest $ingestion_id"
+                    # @info "Death data is not part of currrent data ingest $ingestion_id"
                     death_ingestion_id = get_last_deathingest(db, source_id)
-                    @info "Death ingestion id not specified. By default, use lastest ingested deaths from source $(ingest.source.name) from ingestion id $death_ingestion_id."
+                    # @info "Death ingestion id not specified. By default, use lastest ingested deaths from source $(ingest.source.name) from ingestion id $death_ingestion_id."
                 else
                     death_ingestion_id = ingestion_id
                 end
-                @info "Linking dataset $dataset_name to deathrows from ingestion id $death_ingestion_id, dataset_id = $dataset_id, death_idvar = $death_idvar"
+                # @info "Linking dataset $dataset_name to deathrows from ingestion id $death_ingestion_id, dataset_id = $dataset_id, death_idvar = $death_idvar"
                 link_deathrows(db, death_ingestion_id, dataset_id, death_idvar)
 
-                @info "Dataset $dataset_name imported and linked to deathrows."
+                # @info "Dataset $dataset_name imported and linked to deathrows."
 
             end
 
@@ -496,7 +496,7 @@ function add_sites(source::CHAMPSSource, db::DBInterface.Connection, sourceid::I
     # ODBC can't deal with InlineStrings
     transform!(sites, :site_name => ByRow(x -> String(x)) => :site_name, :country_iso2 => ByRow(x -> String(x)) => :country_iso2)
     savedataframe(db, sites, "sites")
-    @info "Site names and country iso2 codes ingested."
+    # @info "Site names and country iso2 codes ingested."
     return nothing
 end
 """
@@ -517,7 +517,7 @@ function add_sites(source::COMSASource, db::DBInterface.Connection, sourceid::In
         # ODBC can't deal with InlineStrings
         transform!(sites, :site_name => ByRow(x -> String(x)) => :site_name, :country_iso2 => ByRow(x -> String(x)) => :country_iso2)
         savedataframe(db, sites, "sites")
-        @info "Site names and country iso2 codes ingested."
+        # @info "Site names and country iso2 codes ingested."
     end
     return nothing
 end
@@ -571,7 +571,7 @@ function add_protocols(source::AbstractSource, db, datapath::String)
         # Add protocol documents
         file = read_data(DocPDF(joinpath(datapath, source.name, source.protocolfolder), "$value"))
         DBInterface.execute(stmt_doc, [protocol_id, value, file])
-        @info "Protocol document $value ingested."
+        # @info "Protocol document $value ingested."
     end
     return nothing
 end
@@ -600,7 +600,7 @@ function add_instruments(source::AbstractSource, db, datapath::String)
         # Add instrument documents
         file = read_data(DocPDF(joinpath(datapath, source.name, source.instrumentfolder), "$value"))
         DBInterface.execute(stmt_doc, [instrument_id, value, file])
-        @info "Instrument document $value ingested."
+        # @info "Instrument document $value ingested."
     end
     return nothing
 end
@@ -634,7 +634,7 @@ function add_ethics(source::AbstractSource, db::DBInterface.Connection, datapath
         ethics_id = df_ethics[df_ethics.name .== value[2], :ethics_id][1]
 
         DBInterface.execute(stmt_doc, [ethics_id, value[2], "$key ($(value[1]))", file])
-        @info "Ethics document $(value[2]) ingested. Ethics id = $ethics_id."
+        # @info "Ethics document $(value[2]) ingested. Ethics id = $ethics_id."
     end
     return nothing
 end
@@ -856,7 +856,7 @@ function save_dataset(db::DBInterface.Connection, dataset::AbstractDataFrame, na
         #println("Saving column $col : type=$(eltype(coldata.value)) : value_type=$value_type : $name.")
         add_data_column(db, variable_id, value_type, coldata)
     end
-    @info "Dataset $name ingested."
+    # @info "Dataset $name ingested."
     return dataset_id
 end
 
@@ -950,7 +950,7 @@ function link_instruments(db::DBInterface.Connection, instrument_name::String, d
 
     insertdata(db, "instrument_datasets", ["instrument_id", "dataset_id"], [instrument_id, dataset_id])
 
-    @info "Linked dataset $dataset_name to instrument $instrument_name"
+    # @info "Linked dataset $dataset_name to instrument $instrument_name"
 
     return nothing
 end
