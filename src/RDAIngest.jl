@@ -584,6 +584,7 @@ function add_sites(source::HEALSLSource, db::DBInterface.Connection, sourceid::I
             [] => Returns(source.country_iso2) => :country_iso2,
             :source_id)
         # ODBC can't deal with InlineStrings
+        sites = dropmissing(sites, :site_name)
         transform!(sites, :site_name => ByRow(x -> String(x)) => :site_name, :country_iso2 => ByRow(x -> String(x)) => :country_iso2)
         savedataframe(db, sites, "sites")
         # @info "Site names and country iso2 codes ingested."
