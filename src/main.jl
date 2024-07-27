@@ -1,3 +1,4 @@
+using Pkg
 using RDAIngest
 using ConfigEnv
 using Logging
