@@ -26,6 +26,7 @@ export
     add_data_column, lookup_variables, add_datasets, add_datarows,
     get_last_deathingest, read_data, dataset_to_dataframe, dataset_to_arrow, dataset_to_csv, get_datasetname,
     savedataframe, createdatabase, opendatabase,
+    insertwithidentity, save_dataset, 
     rbind #, 
 #get_table, createsources, createprotocols, createtransformations,
 #createvariables, createdatasets, createinstruments, createdeaths

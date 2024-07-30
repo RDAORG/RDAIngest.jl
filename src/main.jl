@@ -303,3 +303,36 @@ flush(io)
 global_logger(old_logger)
 close(io)
 #endregion
+
+
+
+# # Update CHAMPS variable data type
+
+# source = CHAMPSSource()
+# dictionarypath = ENV["DATA_DICTIONARY_PATH"]
+# filename = "Format_CHAMPS_deid_verbal_autopsy"
+
+# file = joinpath(dictionarypath,source.name, "$(filename).csv") #default as .csv file
+# raw_dict = CSV.File(file; delim=";", quotechar=source.quotechar,
+#     dateformat=source.dateformat, decimal=source.decimal) |> DataFrame
+
+# # Fix Data Type errors
+# fix = raw_dict[occursin.(r"(?i)record the date", raw_dict.Description), :].Column_Name
+# raw_dict[in.(raw_dict.DataType,Ref(fix)), :DataType] .=4 #.& in.(raw_dict.Column_Name, Ref(duplicates))
+
+# fix = raw_dict[occursin.(r"(?i)the weight", raw_dict.Description), :].Column_Name
+# raw_dict[in.(raw_dict.Column_Name,Ref(fix)), :DataType] .=2
+
+# fix = raw_dict[occursin.(r"(?i)how old", raw_dict.Description), :].Column_Name
+# raw_dict[in.(raw_dict.Column_Name,Ref(fix)), :DataType] .=2
+
+# fix = raw_dict[occursin.(r"(?i)how many", raw_dict.Description), :].Column_Name
+# raw_dict[in.(raw_dict.Column_Name,Ref(fix)), :DataType] .=2
+
+# fix = raw_dict[occursin.(r"(?i)how long", raw_dict.Description), :].Column_Name
+# raw_dict[in.(raw_dict.Column_Name,Ref(fix)), :DataType] .=2
+
+# fix = raw_dict[occursin.(r"(?i)_unit", raw_dict.Column_Name), :].Column_Name
+# raw_dict[in.(raw_dict.Column_Name,Ref(fix)), :DataType] .=7
+
+# CSV.write(file, raw_dict; delim=";")
