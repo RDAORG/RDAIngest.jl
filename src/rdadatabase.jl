@@ -245,7 +245,7 @@ function prepareselectstatement(db::SQLite.DB, table, columns::Vector{String}, f
     end
 end
 """
-    prepareselectstatement(db::SQLite.DB, table, columns::Vector{String}, filter::Vector{String})
+    prepareselectstatement(db::ODBC.Connection, table, columns::Vector{String}, filter::Vector{String})
 
 Return a statement to select columns from a table, with 0 to n columns to filter on
 """

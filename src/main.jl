@@ -304,8 +304,6 @@ global_logger(old_logger)
 close(io)
 #endregion
 
-
-
 # # Update CHAMPS variable data type
 
 # source = CHAMPSSource()
@@ -335,4 +333,9 @@ close(io)
 # fix = raw_dict[occursin.(r"(?i)_unit", raw_dict.Column_Name), :].Column_Name
 # raw_dict[in.(raw_dict.Column_Name,Ref(fix)), :DataType] .=7
 
-# CSV.write(file, raw_dict; delim=";")
+# fix = raw_dict[occursin.(r"(?i)enter length of", raw_dict.Description), :].Column_Name
+# raw_dict[in.(raw_dict.Column_Name,Ref(fix)), :DataType] .=2
+
+# CSV.write(file, raw_dict; delim=";", quotechar='"')
+
+# df = CSV.read(file, DataFrame; delim=";", quotechar='"')

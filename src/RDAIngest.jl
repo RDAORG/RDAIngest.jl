@@ -17,7 +17,7 @@ export
     Vocabulary, VocabularyItem,
     AbstractSource, CHAMPSSource, COMSASource, HEALSLSource, Ingest,
     ingest_source, ingest_dictionary, ingest_deaths, ingest_data,
-    ingest_voc_CHAMPSMITS, add_source, get_source, get_namedkey, get_variable,
+    ingest_voc_CHAMPSMITS, add_source, get_source, get_namedkey, get_variable_id, get_variable,
     add_domain, get_domain,
     add_sites, read_sitedata, add_protocols, add_instruments, add_ethics,
     add_variables, add_vocabulary, read_variables, get_vocabulary,
@@ -387,7 +387,6 @@ end
     ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::String,
     transformation_id::Integer, ingestion_id::Integer, death_ingestion_id=nothing)
 
-
 Step 4: 
 Import datasets, and link datasets to deaths
 * Ingestion_id can be from step 3 outputs if ingesting both death and datasets at the same time, if missing an ingestion will be created.
@@ -397,7 +396,7 @@ function ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::S
     try
         source_id = get_source(db, ingest.source.name)
         domain_id = get_domain(db, ingest.source.name)
-        death_idvar = get_variable(db, domain_id, ingest.source.id_col)
+        death_idvar = get_variable_id(db, domain_id, ingest.source.id_col)
 
         DBInterface.transaction(db) do
             if ingestion_id == 0
@@ -480,11 +479,11 @@ function get_namedkey(db::DBInterface.Connection, table, key, keycol)
 end
 
 """
-    get_variable(db::DBInterface.Connection, domain, name)
+    get_variable_id(db::DBInterface.Connection, domain, name)
 
-Returns the `variable_id` of variable named `name` in domain with id `domain`
+    Returns the `variable_id` of variable named `name` in domain with id `domain`
 """
-function get_variable(db::ODBC.Connection, domain, name)
+function get_variable_id(db::ODBC.Connection, domain, name)
     stmt = prepareselectstatement(db, "variables", ["variable_id"], ["domain_id", "name"])
     result = DBInterface.execute(stmt, [domain, name]; iterate_rows=true) |> DataFrame
     if nrow(result) == 0
@@ -494,17 +493,32 @@ function get_variable(db::ODBC.Connection, domain, name)
     end
 end
 """
-    get_variable(db::SQLite.DB, domain, name)
+    get_variable_id(db::SQLite.DB, domain, name)
 
 Returns the `variable_id` of variable named `name` in domain with id `domain`
 """
-function get_variable(db::SQLite.DB, domain, name)
+function get_variable_id(db::SQLite.DB, domain, name)
     stmt = prepareselectstatement(db, "variables", ["variable_id"], ["domain_id", "name"])
     result = DBInterface.execute(stmt, [domain, name]) |> DataFrame
     if nrow(result) == 0
         return missing
     else
         return result[1, :variable_id]
+    end
+end
+
+"""
+    get_variable(db::SQLite.DB, variable_id)
+
+Returns the entry of variable with `variable_id`
+"""
+function get_variable(db::SQLite.DB, variable_id)
+    stmt = prepareselectstatement(db, "variables", ["*"], ["variable_id"])
+    result = DBInterface.execute(stmt, [variable_id]) |> DataFrame
+    if nrow(result) == 0
+        return missing
+    else
+        return result
     end
 end
 
