@@ -1,17 +1,19 @@
 module RDAIngest
 
 using DataFrames
-using CSV
 using SQLite
 using DBInterface
 using ConfigEnv
-using CSV
 using Dates
 using Arrow
 using DataStructures
 using ODBC
+
+using CSV
 using XLSX
 using Docx
+using FileIO
+using Base64
 
 export
     Vocabulary, VocabularyItem,
@@ -1126,10 +1128,9 @@ function read_data(datadoc::DocPDF)
     extension = last(split(datadoc.name, "."))
     if !isfile(file)
         error("File '$file' not found.")
-    elseif lowercase(extension) == "docx"
-        df = Docx.open(file)
-    else
+    else # lowercase(extension) == "docx"
         df = read(file)
+        df = Base64.base64encode(df)
         return df
     end
 end
