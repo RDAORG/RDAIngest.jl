@@ -1,22 +1,25 @@
 module RDAIngest
 
 using DataFrames
-using CSV
 using SQLite
 using DBInterface
 using ConfigEnv
-using CSV
 using Dates
 using Arrow
 using DataStructures
 using ODBC
+
+using CSV
 using XLSX
+using Docx
+using FileIO
+using Base64
 
 export
     Vocabulary, VocabularyItem,
-    AbstractSource, CHAMPSSource, COMSASource, Ingest,
+    AbstractSource, CHAMPSSource, COMSASource, HEALSLSource, Ingest,
     ingest_source, ingest_dictionary, ingest_deaths, ingest_data,
-    ingest_voc_CHAMPSMITS, add_source, get_source, get_namedkey, get_variable,
+    ingest_voc_CHAMPSMITS, add_source, get_source, get_namedkey, get_variable_id, get_variable,
     add_domain, get_domain,
     add_sites, read_sitedata, add_protocols, add_instruments, add_ethics,
     add_variables, add_vocabulary, read_variables, get_vocabulary,
@@ -24,7 +27,9 @@ export
     add_ingestion, add_transformation, add_dataset_ingestion, add_transformation_output,
     add_data_column, lookup_variables, add_datasets, add_datarows,
     get_last_deathingest, read_data, dataset_to_dataframe, dataset_to_arrow, dataset_to_csv, get_datasetname,
-    savedataframe, createdatabase, opendatabase #, 
+    savedataframe, createdatabase, opendatabase,
+    insertwithidentity, save_dataset, 
+    rbind #, 
 #get_table, createsources, createprotocols, createtransformations,
 #createvariables, createdatasets, createinstruments, createdeaths
 
@@ -48,7 +53,7 @@ end
 
 # Define an abstract document input
 abstract type DataDocument end
-# Define subtypes of Document - csv, xlsx, pdf
+# Define subtypes of Document - csv, xlsx, pdf, docx
 struct DocCSV <: DataDocument
     path::String
     name::String
@@ -63,7 +68,7 @@ struct DocXLSX <: DataDocument
     sheetname::String
     cellrange::String
 end
-struct DocPDF <: DataDocument
+struct DocPDF <: DataDocument #Can take either .pdf or .docx
     path::String
     name::String
 end
@@ -90,7 +95,7 @@ Base.@kwdef struct CHAMPSSource <: AbstractSource
     dateformat::String = "yyyy-mm-dd"
     decimal::Char = '.'
 
-    # Protocol - assume file extension pdf
+    # Protocol - specify file extension in name
     protocolfolder::String = "Protocols"
     protocols::Dict{String,String} = Dict("CHAMPS Mortality Surveillance Protocol" => "CHAMPS-Mortality-Surveillance-Protocol-v1.3.pdf",
         "CHAMPS Social Behavioral Science Protocol" => "CHAMPS-Social-Behavioral-Science-Protocol-v1.0.pdf",
@@ -105,8 +110,10 @@ Base.@kwdef struct CHAMPSSource <: AbstractSource
     # Ethics - assume file extension pdf
     # Document dictionaries need to match with comittee and reference
     ethicsfolder::String = "Ethics"
-    ethics::Dict{String,Vector{String}} = Dict("Emory" => ["ref1", "IRB1.pdf"], "Emory" => ["ref2", "IRB2.pdf"],
-        "Country" => ["ref3", "IRB3.pdf"])
+    ethics::Dict{String,Vector{String}} = Dict("Local ethics institution" => ["ICF-04 CHAMPS VA v1.1", "ICF-04 CHAMPS VA v1.1.docx"],
+    "Local ethics institution" => ["ICF-03_CHAMPS non_MITS consent v1.3", "ICF-03_CHAMPS non_MITS consent v1.3.docx"],
+    "Local ethics institution" => ["ICF-01 CHAMPS MITS procedures v1.3", "ICF-01 CHAMPS MITS procedures v1.3.docx"])
+    
     # Data dictionaries
     domain_name::String = "CHAMPS"
     domain_description::String = "Raw CHAMPS level-2 deidentified data"
@@ -118,7 +125,7 @@ Base.@kwdef struct CHAMPSSource <: AbstractSource
     tac_vocabulary::String = "CHAMPS_deid_tac_vocabulary.xlsx"
 end
 """
-Provide CHAMPS specific information
+Provide COMSA Mozambique specific information
 """
 Base.@kwdef struct COMSASource <: AbstractSource
     name::String = "COMSA"
@@ -135,7 +142,7 @@ Base.@kwdef struct COMSASource <: AbstractSource
     dateformat::String = "u dd, yyyy" #not "dd-u-yyyy" 
     decimal::Char = '.'
 
-    # Protocol - assume file extension pdf
+    # Protocol - specify file extension in name
     protocolfolder::String = "Protocols"
     protocols::Dict{String,String} = Dict("Countrywide Mortality Surveillance for Action (COMSA) Mozambique (Formative Research)" => "COMSA-FR-protocol_version-1.0_05July2017.pdf",
         "Countrywide Mortality Surveillance for Action (COMSA) Mozambique" => "COMSA-protocol_without-FR_version-1.1_15June2017_clean_REVISED.pdf",
@@ -155,15 +162,57 @@ Base.@kwdef struct COMSASource <: AbstractSource
 
     # Ethics - assume file extension pdf
     ethicsfolder::String = "Ethics"
-    ethics::Dict{String,Vector{String}} = Dict("National Health Bioethics Committee of Mozambique" => ["REF 608/CNBS/17", "IRB1.pdf"],
-        "Johns Hopkins Bloomberg School of Public Health" => ["IRB#7867", "IRB2.pdf"])
+    ethics::Dict{String,Vector{String}} = Dict("National Health Bioethics Committee of Mozambique" => ["adult vasa - version 1, 2020 07 15", "adult vasa - version 1, 2020 07 15.docx"],
+    "National Health Bioethics Committee of Mozambique" => ["child assent vasa - version 1, 2020 07 15", "child assent vasa - version 1, 2020 07 15.docx"])
 
     # Data dictionaries
     domain_name::String = "COMSA"
-    domain_description::String = "COMSA verbal autopsy dictionary"
+    domain_description::String = "COMSA Mozambique verbal autopsy dictionary"
     datadictionaries::Vector{String} = ["Format_Comsa_WHO_VA_20230308"]
     tac_vocabulary::String = ""
 end
+
+"""
+Provide COMSA Sierra Leone (HEALSL) specific information
+"""
+Base.@kwdef struct HEALSLSource <: AbstractSource
+    name::String = "HEALSL"
+    datafolder::String = "De_identified_data"
+
+    site_data::String = "healsl_all_v1"
+    site_col::String = "id10057"
+    country_col::String = ""
+    country_iso2::String = "SL"
+    id_col::String = "rowid" #column that uniquely identifies a death
+
+    delim::Char = ','
+    quotechar::Char = '"'
+    dateformat::String = "u dd, yyyy" #not "dd-u-yyyy" 
+    decimal::Char = '.'
+
+    # Protocol - specify file extension
+    protocolfolder::String = "Protocols"
+    protocols::Dict{String,String} = Dict("COMSA Sierra Leone (HEAL-SL) Protocol" => "4_COMSA Protocol - 27-Feb-2022.pdf",
+        "COMSA Data Processing Notes" => "HEAL-SL Research Data Processing Notes for Extenal.pdf")
+
+    # Instrument - specify file extension
+    instrumentfolder::String = "Instruments"
+    instruments::Dict{String,String} = Dict("VA - Adult" => "Adult_eVA_Questionnaire-SL.pdf",
+        "VA - Child" => "Child_eVA_Questionnaire-SL.pdf",
+        "VA - Neonates" => "Neonate_eVA_Questionnaire-SL.pdf")
+
+    # Ethics - assume file extension pdf
+    ethicsfolder::String = "Ethics"
+    ethics::Dict{String,Vector{String}} = Dict("Government of Sierra Leone" => ["IRB", "IRB Renewed.pdf"],
+    "Government of Sierra Leone" => ["Consent forms", "Annexe 2 Consent forms- 27-Feb-2022.pdf"])
+    
+    # Data dictionaries
+    domain_name::String = "HEALSL"
+    domain_description::String = "COMSA Sierra Leone (HEALSL) verbal autopsy dictionary"
+    datadictionaries::Vector{String} = ["Format_ddict_healsl"]
+    tac_vocabulary::String = ""
+end
+
 """
 Provide ingest specific information
 """
@@ -340,7 +389,6 @@ end
     ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::String,
     transformation_id::Integer, ingestion_id::Integer, death_ingestion_id=nothing)
 
-
 Step 4: 
 Import datasets, and link datasets to deaths
 * Ingestion_id can be from step 3 outputs if ingesting both death and datasets at the same time, if missing an ingestion will be created.
@@ -350,7 +398,7 @@ function ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::S
     try
         source_id = get_source(db, ingest.source.name)
         domain_id = get_domain(db, ingest.source.name)
-        death_idvar = get_variable(db, domain_id, ingest.source.id_col)
+        death_idvar = get_variable_id(db, domain_id, ingest.source.id_col)
 
         DBInterface.transaction(db) do
             if ingestion_id == 0
@@ -433,11 +481,11 @@ function get_namedkey(db::DBInterface.Connection, table, key, keycol)
 end
 
 """
-    get_variable(db::DBInterface.Connection, domain, name)
+    get_variable_id(db::DBInterface.Connection, domain, name)
 
-Returns the `variable_id` of variable named `name` in domain with id `domain`
+    Returns the `variable_id` of variable named `name` in domain with id `domain`
 """
-function get_variable(db::ODBC.Connection, domain, name)
+function get_variable_id(db::ODBC.Connection, domain, name)
     stmt = prepareselectstatement(db, "variables", ["variable_id"], ["domain_id", "name"])
     result = DBInterface.execute(stmt, [domain, name]; iterate_rows=true) |> DataFrame
     if nrow(result) == 0
@@ -447,17 +495,32 @@ function get_variable(db::ODBC.Connection, domain, name)
     end
 end
 """
-    get_variable(db::SQLite.DB, domain, name)
+    get_variable_id(db::SQLite.DB, domain, name)
 
 Returns the `variable_id` of variable named `name` in domain with id `domain`
 """
-function get_variable(db::SQLite.DB, domain, name)
+function get_variable_id(db::SQLite.DB, domain, name)
     stmt = prepareselectstatement(db, "variables", ["variable_id"], ["domain_id", "name"])
     result = DBInterface.execute(stmt, [domain, name]) |> DataFrame
     if nrow(result) == 0
         return missing
     else
         return result[1, :variable_id]
+    end
+end
+
+"""
+    get_variable(db::SQLite.DB, variable_id)
+
+Returns the entry of variable with `variable_id`
+"""
+function get_variable(db::SQLite.DB, variable_id)
+    stmt = prepareselectstatement(db, "variables", ["*"], ["variable_id"])
+    result = DBInterface.execute(stmt, [variable_id]) |> DataFrame
+    if nrow(result) == 0
+        return missing
+    else
+        return result
     end
 end
 
@@ -515,6 +578,30 @@ function add_sites(source::COMSASource, db::DBInterface.Connection, sourceid::In
             [] => Returns(source.country_iso2) => :country_iso2,
             :source_id)
         # ODBC can't deal with InlineStrings
+        transform!(sites, :site_name => ByRow(x -> String(x)) => :site_name, :country_iso2 => ByRow(x -> String(x)) => :country_iso2)
+        savedataframe(db, sites, "sites")
+        # @info "Site names and country iso2 codes ingested."
+    end
+    return nothing
+end
+
+"""
+    add_sites(source::HEALSLSource, db::DBInterface.Connection, sourceid::Integer, datapath::String)
+
+Add COMSA Sierra Leone sites (districts) and country iso2 codes to sites table
+"""
+function add_sites(source::HEALSLSource, db::DBInterface.Connection, sourceid::Integer, datapath::String)
+    sites = read_sitedata(source, datapath, sourceid)
+
+    if (source.country_iso2 == "" || !isdefined(source, Symbol("country_iso2")))
+        error("Country iso2 code not provided in data and not specified.")
+    else
+        select!(sites,
+            Symbol(source.site_col) => ByRow(x -> x) => :site_name,
+            [] => Returns(source.country_iso2) => :country_iso2,
+            :source_id)
+        # ODBC can't deal with InlineStrings
+        sites = dropmissing(sites, :site_name)
         transform!(sites, :site_name => ByRow(x -> String(x)) => :site_name, :country_iso2 => ByRow(x -> String(x)) => :country_iso2)
         savedataframe(db, sites, "sites")
         # @info "Site names and country iso2 codes ingested."
@@ -1037,16 +1124,18 @@ read_data(datadoc)
 Read file names and formatting parameters, returns a DataFrame with the data
 """
 function read_data(datadoc::DocPDF)
-    file = joinpath(datadoc.path, "$(datadoc.name)") #.pdf
+    file = joinpath(datadoc.path, "$(datadoc.name)") #.pdf or .docx needs to be specified
+    extension = last(split(datadoc.name, "."))
     if !isfile(file)
         error("File '$file' not found.")
-    else
+    else # lowercase(extension) == "docx"
         df = read(file)
+        df = Base64.base64encode(df)
         return df
     end
 end
 function read_data(datadoc::DocCSV)
-    file = joinpath(datadoc.path, "$(datadoc.name).csv")
+    file = joinpath(datadoc.path, "$(datadoc.name).csv") #default as .csv file
     if !isfile(file)
         error("File '$file' not found.")
     else
@@ -1056,7 +1145,7 @@ function read_data(datadoc::DocCSV)
     end
 end
 function read_data(datadoc::DocXLSX)
-    file = joinpath(datadoc.path, "$(datadoc.name)") #xlsx
+    file = joinpath(datadoc.path, "$(datadoc.name)") #.xlsx needs to be specified
     if !isfile(file)
         error("File '$file' not found.")
     else
@@ -1064,6 +1153,7 @@ function read_data(datadoc::DocXLSX)
         return df
     end
 end
+
 
 """
     dataset_to_dataframe(db::SQLite.DB, dataset)::AbstractDataFrame
@@ -1347,6 +1437,24 @@ function add_datarows(db::DBInterface.Connection, nrow::Integer, dataset_id::Int
         DBInterface.execute(stmt, [dataset_id])
     end
     return selectdataframe(db, "datarows", ["row_id"], ["dataset_id"], [dataset_id]) |> DataFrame
+end
+
+
+"""
+    rbind(dfs::Vector{DataFrame})
+
+    Row binding dataframes. If a column is missing in a dataframe, fill with missing value.
+"""
+
+function rbind(dfs::Vector{DataFrame})
+    all_columns = union([names(df) for df in dfs]...)
+    for df in dfs
+        for col in setdiff(all_columns, names(df))
+            df[!, col] = Vector{Union{Missing, Int}}(missing, nrow(df))
+        end
+    end
+    ouptut = vcat(dfs...)
+    return output
 end
 
 include("constants.jl")
