@@ -187,6 +187,23 @@ function prepareinsertstatement(db::ODBC.Connection, table, columns)
     sql = "INSERT INTO $table ($(join(columns, ", "))) VALUES ($(join(paramnames, ", ")));"
     return DBInterface.prepare(db, sql)
 end
+
+"""
+    updatevalue(db::SQLite.DB, table, condition_column, column, condition_value, value)
+
+Update value of column given condition_value in condition_column
+"""
+function updatevalue(db::SQLite.DB, table, condition_column, column, condition_value, value)
+    sql = """
+        UPDATE $table 
+        SET $column = ?
+        WHERE $condition_column = ?
+        """
+    DBInterface.execute(db, sql, (value, condition_value))
+    return nothing
+end
+
+
 """
     insertwithidentity(db::ODBC.Connection, table, columns, values, keycol)
 
@@ -217,13 +234,24 @@ function insertwithidentity(db::SQLite.DB, table, columns, values, keycol)
     stmt = DBInterface.prepare(db, sql)
     return DBInterface.lastrowid(DBInterface.execute(stmt, values))
 end
+
 """
-    insertdata(db::DBInterface.Connection, table, columns, values)
+    insertdata(db::SQLite.DB, table, columns, values)
 
 Insert a set of values into a table, columns list the names of the columns to insert, and values the values to insert
 """
-function insertdata(db::DBInterface.Connection, table, columns, values)
+function insertdata(db::SQLite.DB, table, columns, values)
     stmt = prepareinsertstatement(db, table, columns)
+    return DBInterface.execute(stmt, values)
+end
+
+"""
+    insertdata(db::DBInterface.Connection, table, columns, values, filter)
+
+Insert a set of values into a table, columns list the names of the columns to insert, and values the values to insert
+"""
+function insertdata(db::DBInterface.Connection, table, columns, values, filter)
+    stmt = prepareinsertstatement(db, table, columns, filter)
     return DBInterface.execute(stmt, values)
 end
 
@@ -281,7 +309,7 @@ function selectdataframe(db::ODBC.Connection, table::String, columns::Vector{Str
 end
 
 """
-    selectsourcesites(db, source::AbstractSource)
+    selectsourcesites(db::SQLite.DB, source::AbstractSource)
 
 Returns a dataframe with the sites associated with a source
 """
@@ -315,15 +343,27 @@ function createsources(db::SQLite.DB)
     sql = raw"""
     CREATE TABLE "sources" (
     "source_id" INTEGER NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "study_type_id" INTEGER,
+    CONSTRAINT "fk_sources_study_type_id" FOREIGN KEY ("study_type_id") REFERENCES "study_types" ("study_type_id") ON DELETE CASCADE ON UPDATE RESTRICT
+    );
+    """
+    DBInterface.execute(db, sql)
+
+    sql = raw"""
+    CREATE TABLE "study_types" (
+    "study_type_id" INTEGER NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL
     );
     """
     DBInterface.execute(db, sql)
+
     sql = raw"""
     CREATE TABLE "sites" (
     "site_id" INTEGER NOT NULL PRIMARY KEY,
     "site_name" TEXT NOT NULL,
-    "country_iso2" TEXT NOT NULL,
+    "country_name" TEXT NOT NULL,
+    "country_iso3" TEXT NOT NULL,
     "source_id" INTEGER NOT NULL,
     CONSTRAINT "fk_sites_source_id" FOREIGN KEY ("source_id") REFERENCES "sources" ("source_id") ON DELETE CASCADE ON UPDATE NO ACTION
     );
@@ -337,8 +377,23 @@ function createsources(db::SQLite.DB)
     );
     """
     DBInterface.execute(db, sql)
+
+    study_types = initstudytypes()
+    savedataframe(db, study_types, "study_types")
+    
     return nothing
 end
+
+"""
+    initstudytypes()
+
+Default transformation types
+"""
+initstudytypes() = DataFrame([(study_type_id=RDA_STUDY_TYPE_DSS, name="Demographic Surveillance"),
+    (study_type_id=RDA_STUDY_TYPE_COHORT, name="Cohort study"),
+    (study_type_id=RDA_STUDY_TYPE_SURVEY, name="Cross-sectional survey"),
+    (study_type_id=RDA_STUDY_TYPE_PANEL, name="Panel data")])
+
 """
     createsources(db::ODBC.Connection)
 
@@ -348,15 +403,21 @@ function createsources(db::ODBC.Connection)
     sql = raw"""
     CREATE TABLE [sources] (
         [source_id] INT NOT NULL PRIMARY KEY IDENTITY(1,1),
-        [name] NVARCHAR(255) NOT NULL
+        [name] NVARCHAR(255) NOT NULL,
+        [pi_name] NVARCHAR(255) NOT NULL,
+        [pi_affiliation] NVARCHAR(255) NOT NULL,
+        [funder] NVARCHAR(255) NOT NULL,
+        [funder_abbr] NVARCHAR(255) NOT NULL
     );
     """
     DBInterface.execute(db, sql)
+
     sql = raw"""
     CREATE TABLE [sites] (
         [site_id] INT NOT NULL PRIMARY KEY IDENTITY(1,1),
         [site_name] NVARCHAR(255) NOT NULL,
-        [country_iso2] NCHAR(2) NOT NULL,
+        [country_name] NVARCHAR(255) NOT NULL,
+        [country_iso3] NCHAR(3) NOT NULL,
         [source_id] INT NOT NULL,
         CONSTRAINT [fk_sites_source_id] FOREIGN KEY ([source_id]) REFERENCES [sources] ([source_id]) ON DELETE CASCADE ON UPDATE NO ACTION
     );
@@ -370,6 +431,21 @@ function createsources(db::ODBC.Connection)
     );
     """
     DBInterface.execute(db, sql)
+
+    sql = raw"""
+    CREATE TABLE [source_collection] (
+        [source_id] INT NOT NULL PRIMARY KEY IDENTITY(1,1),
+        [source_cycle] NVARCHAR(255),
+        [collection_start] NVARCHAR(255),
+        [collection_end] NVARCHAR(255),
+        [period_start] NVARCHAR(255),
+        [period_end] NVARCHAR(255),
+        PRIMARY KEY ([source_id]),
+        CONSTRAINT [fk_sites_source_id] FOREIGN KEY ([source_id]) REFERENCES [sources] ([source_id]) ON DELETE CASCADE ON UPDATE NO ACTION
+    );
+    """
+    DBInterface.execute(db, sql)
+
     return nothing
 end
 
@@ -549,7 +625,7 @@ function createtransformations(db::SQLite.DB)
     "transformation_type_id" INTEGER NOT NULL,
     "transformation_status_id" INTEGER NOT NULL,
     "description" TEXT NOT NULL,
-    "code_reference" TEXT NOT NULL,
+    "code_reference" BLOB NOT NULL,
     "date_created" DATE NOT NULL,
     "created_by" TEXT NOT NULL,
     CONSTRAINT "fk_transformations_transformation_type_id" FOREIGN KEY ("transformation_type_id") REFERENCES "transformation_types" ("transformation_type_id") ON DELETE CASCADE ON UPDATE RESTRICT,
@@ -587,6 +663,7 @@ Default transformation statuses
 """
 initstatuses() = DataFrame([(transformation_status_id=RDA_TRANSFORMATION_STATUS_UNVERIFIED, name="Unverified"),
     (transformation_status_id=RDA_TRANSFORMATION_STATUS_VERIFIED, name="Verified")])
+
 """
     createtransformations(db::ODBC.Connection)
 
@@ -613,7 +690,7 @@ function createtransformations(db::ODBC.Connection)
         [transformation_type_id] INT NOT NULL,
         [transformation_status_id] INT NOT NULL,
         [description] NVARCHAR(MAX) NOT NULL,
-        [code_reference] NVARCHAR(MAX) NOT NULL,
+        [code_reference] VARBINARY(MAX) NOT NULL,
         [date_created] DATE NOT NULL,
         [created_by] NVARCHAR(255) NOT NULL,
         CONSTRAINT [fk_transformations_transformation_type_id] FOREIGN KEY ([transformation_type_id]) REFERENCES [transformation_types] ([transformation_type_id]) ON DELETE CASCADE ON UPDATE NO ACTION,
@@ -857,6 +934,7 @@ function identityinsertoff(db::ODBC.Connection, table::String)
     DBInterface.execute(db, sql)
     return nothing
 end
+
 """
     updatevariable_vocabulary(db::DBInterface.Connection, name, domain_id, vocabulary_id)
 
@@ -882,10 +960,37 @@ function createdatasets(db::SQLite.DB)
     "dataset_id" INTEGER NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
     "date_created" DATE NOT NULL,
-    "description" TEXT
+    "description" TEXT,
+    "unit_of_analysis_id" INTEGER,
+    "repository_id" TEXT,
+    "doi" TEXT,
+    CONSTRAINT "fk_datasets_unit_of_analysis_id" FOREIGN KEY ("unit_of_analysis_id") REFERENCES "unit_of_analysis_types" ("unit_of_analysis_id") ON DELETE CASCADE ON UPDATE RESTRICT,
+    CONSTRAINT "fk_datasets_repository_id" FOREIGN KEY ("repository_id") REFERENCES "repository" ("repository_id") ON DELETE CASCADE ON UPDATE RESTRICT
     );
     """
     DBInterface.execute(db, sql)
+
+    sql = raw"""
+    CREATE TABLE "repository" (
+    "repository_id" TEXT NOT NULL PRIMARY KEY,
+    "repository_ddi_id" TEXT,
+    "repository_ddi" BLOB,
+    "repository_rdf" BLOB,
+    CONSTRAINT "fk_repository_dataset_id" FOREIGN KEY ("repository_id") REFERENCES "datasets" ("repository_id") ON DELETE CASCADE ON UPDATE NO ACTION
+    );
+    """
+    DBInterface.execute(db, sql)
+
+    sql = raw"""
+    CREATE TABLE "unit_of_analysis_types" (
+    "unit_of_analysis_id" INTEGER NOT NULL PRIMARY KEY,
+    "name" TEXT NOT NULL
+    );
+    """
+    DBInterface.execute(db, sql)
+    units = initunitanalysis()
+    savedataframe(db, units, "unit_of_analysis_types")
+    
     sql = raw"""
     CREATE TABLE "datarows" (
     "row_id" INTEGER NOT NULL PRIMARY KEY,
@@ -950,6 +1055,15 @@ function createdatasets(db::SQLite.DB)
     DBInterface.execute(db, sql)
     return nothing
 end
+
+"""
+    initunitanalysis()
+
+Default unit of analysis
+"""
+initunitanalysis() = DataFrame([(unit_of_analysis_id=RDA_UNIT_OF_ANALYSIS_INDIVIDUAL, name="Individual"),
+    (unit_of_analysis_id=RDA_UNIT_OF_ANALYSIS_AGGREGATION, name="Aggregation")])
+
 """
     createdatasets(db::ODBC.Connection)
 
@@ -961,10 +1075,27 @@ function createdatasets(db::ODBC.Connection)
         [dataset_id] INT NOT NULL PRIMARY KEY IDENTITY(1,1),
         [name] NVARCHAR(255) NOT NULL,
         [date_created] DATE NOT NULL,
-        [description] NVARCHAR(MAX)
+        [description] NVARCHAR(MAX),
+
+        [unit_of_analysis_id] INTEGER,
+        [repository_id] NVARCHAR(255),
+        [doi] NVARCHAR(255)
     );
     """
     DBInterface.execute(db, sql)
+
+    sql = raw"""
+    CREATE TABLE [repository] (
+        [repository_id] NVARCHAR(255) NOT NULL,
+        [repository_ddi_id] NVARCHAR(255),
+        [repository_ddi] VARBINARY(MAX),
+        [repository_rdf] VARBINARY(MAX),
+        PRIMARY KEY ([repository_id]),
+        CONSTRAINT [fk_repository_id] FOREIGN KEY ([repository_id]) REFERENCES [datasets] ([repository_id]) ON DELETE CASCADE ON UPDATE NO ACTION
+    );
+    """
+    DBInterface.execute(db, sql)
+
     sql = raw"""
     CREATE TABLE [datarows] (
         [row_id] INT NOT NULL PRIMARY KEY IDENTITY(1,1),
@@ -973,6 +1104,7 @@ function createdatasets(db::ODBC.Connection)
     );
     """
     DBInterface.execute(db, sql)
+    
     sql = raw"""
     CREATE TABLE [data] (
         [row_id] INT NOT NULL,
@@ -1042,7 +1174,10 @@ function createinstruments(db::SQLite.DB)
     CREATE TABLE "instruments" (
     "instrument_id" INTEGER NOT NULL PRIMARY KEY,
     "name" TEXT NOT NULL,
-    "description" TEXT NOT NULL
+    "description" TEXT NOT NULL,
+    "collection_cycle" TEXT,
+    "collection_start" DATE,
+    "collection_end" DATE
     );
     """
     DBInterface.execute(db, sql)
@@ -1063,6 +1198,7 @@ function createinstruments(db::SQLite.DB)
     );
     """
     DBInterface.execute(db, sql)
+
     sql = raw"""
     CREATE TABLE "instrument_documents" (
     "intrument_document_id" INTEGER NOT NULL,
@@ -1097,7 +1233,10 @@ function createinstruments(db::ODBC.Connection)
     CREATE TABLE [instruments] (
         [instrument_id] INT NOT NULL PRIMARY KEY IDENTITY(1,1),
         [name] NVARCHAR(255) NOT NULL,
-        [description] NVARCHAR(MAX) NOT NULL
+        [description] NVARCHAR(MAX) NOT NULL,
+        [collection_cycle] NVARCHAR(255),
+        [collection_start] DATE,
+        [collection_end] DATE
     )
     """
     DBInterface.execute(db, sql)
@@ -1108,6 +1247,7 @@ function createinstruments(db::ODBC.Connection)
     )
     """
     DBInterface.execute(db, sql)
+    # !!! NEEDS UPDATE TO instrument_datasets
     sql = raw"""
     CREATE TABLE [instrument_datasets] (
         [instrument_id] INTEGER NOT NULL,
