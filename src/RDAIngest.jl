@@ -14,29 +14,35 @@ using XLSX
 using Docx
 using FileIO
 using Base64
+using JSON3
 
 export
     Vocabulary, VocabularyItem,
-    AbstractSource, CHAMPSSource, COMSASource, HEALSLSource, Ingest,
-    ingest_source, ingest_dictionary, ingest_deaths, ingest_data,
-    ingest_voc_CHAMPSMITS, add_source, get_source, get_namedkey, get_variable_id, get_variable,
-    add_domain, get_domain,
-    add_sites, read_sitedata, add_protocols, add_instruments, add_ethics,
-    add_variables, add_vocabulary, read_variables, get_vocabulary,
-    import_datasets, link_instruments, link_deathrows, death_in_ingest, dataset_in_ingest,
-    add_ingestion, add_transformation, add_dataset_ingestion, add_transformation_output,
-    add_data_column, lookup_variables, add_datasets, add_datarows,
-    get_last_deathingest, read_data, dataset_to_dataframe, dataset_to_arrow, dataset_to_csv, get_datasetname,
-    savedataframe, createdatabase, opendatabase,
-    insertwithidentity, save_dataset, 
-    rbind #, 
-#get_table, createsources, createprotocols, createtransformations,
-#createvariables, createdatasets, createinstruments, createdeaths
+    DataDocument, DocCSV, DocXLSX, DocPDF, read_data, 
+    AbstractSource, rawSource, CHAMPSSource, COMSAMZSource, HEALSLSource, #Source structs
+    AbstractIngest, sourceIngest, CHAMPSIngest, COMSAMZIngest, HEALSLIngest, userIngest, #Ingest structs
+
+    ingest_source, 
+    add_sites, add_instruments, add_protocols, add_ethics, add_source, add_domain, 
+    ingest_dictionary, ingest_deaths, ingest_data, save_dataset, 
+    read_variables, get_vocabulary, add_variables, add_vocabulary, lookup_variables, 
+    add_datarows, add_data_column, 
+    
+    death_in_ingest, get_last_deathingest, link_instruments, link_deathrows, 
+    get_namedkey, get_variable_id, get_variable, get_valuetype, get_datasetname, 
+
+    updatevalue, rbind, insertdata, insertwithidentity, 
+    get_table, selectdataframe, prepareselectstatement, selectsourcesites, 
+
+    dataset_to_dataframe, dataset_to_arrow, dataset_to_csv, 
+    dataset_variables, dataset_column,
+    
+    savedataframe, createdatabase, opendatabase
 
 #ODBC.bindtypes(x::Vector{UInt8}) = ODBC.API.SQL_C_BINARY, ODBC.API.SQL_LONGVARBINARY
 
 """
-Structs
+Structs for vocabulary
 """
 
 struct VocabularyItem
@@ -50,6 +56,10 @@ struct Vocabulary
     description::String
     items::Vector{VocabularyItem}
 end
+
+"""
+Structs for document type
+"""
 
 # Define an abstract document input
 abstract type DataDocument end
@@ -66,7 +76,7 @@ struct DocXLSX <: DataDocument
     path::String
     name::String
     sheetname::String
-    cellrange::String
+    #cellrange::String
 end
 struct DocPDF <: DataDocument #Can take either .pdf or .docx
     path::String
@@ -74,197 +84,473 @@ struct DocPDF <: DataDocument #Can take either .pdf or .docx
 end
 
 """
-Provide a source struct for source specific information
+Struct for source-related information
 """
 abstract type AbstractSource end
-"""
-Provide CHAMPS specific information
-"""
-Base.@kwdef struct CHAMPSSource <: AbstractSource
-    name::String = "CHAMPS"
-    datafolder::String = "De_identified_data"
 
-    site_data::String = "CHAMPS_deid_basic_demographics"
+Base.@kwdef mutable struct rawSource <: AbstractSource 
+
+    # Domain info
+    name::String = "source_name"
+
+    # Study type
+    study_type_id::Integer = 1
+
+    # Sites
+    datafolder::String = "De_identified_data"
+    site_data::String = "CHAMPS_deid_basic_demographics.csv"
+    site_col::String = "site_iso_code"
+    country_col::String = "name of country name column"
+    country_name::String = "single country name" # if country col is empty, specify country name
+    #add_iso3::Bool = false # add iso3 automatically
+
+    # Protocol - specify file extension in name
+    protocolfolder::String = "Protocols"
+    protocols::Dict{String,String} = Dict("protocol_file_name.pdf" => "Protocol name")
+
+    # Instrument - specify file extension in name
+    instrumentfolder::String = "Instruments"
+    instruments::Dict{String,String} = Dict("questionnaire_file_name.pdf" => "Dataset name.extension")
+
+    # Ethics - specify file extension in name
+    ethicsfolder::String = "Ethics"
+    ethics::Dict{String,Vector{String}} = Dict("ethics_file_name.pdf" => ["Ethics name","IRB committee","protocol_file_name.pdf"])
+
+    # CSV format
+    delim::Char = ','
+    quotechar::Char = '"'
+    dateformat::String = "yyyy-mm-dd"
+    decimal::Char = '.'
+    
+end
+
+"""
+Provide CHAMPS specific source information
+"""
+
+Base.@kwdef mutable struct CHAMPSSource <: AbstractSource 
+
+    # Domain info
+    name::String = "CHAMPS"
+
+    # Study type
+    study_type_id::Integer = 1
+
+    # Sites
+    datafolder::String = "De_identified_data"
+    site_data::String = "CHAMPS_deid_basic_demographics.csv"
     site_col::String = "site_iso_code"
     country_col::String = "site_iso_code"
-    country_iso2::String = "" #check - probably don't need this
-    id_col::String = "champs_deid" #column that uniquely identifies a death
+    country_name::String = "single country name" # if country col is empty, specify country name
+    #add_iso3::Bool = false # add iso3 automatically
 
+    # Protocol - specify file extension in name
+    protocolfolder::String = "Protocols"
+    protocols::Dict{String,String} = Dict("CHAMPS-Mortality-Surveillance-Protocol-v1.3.pdf" => "CHAMPS Mortality Surveillance Protocol",
+    "CHAMPS-Social-Behavioral-Science-Protocol-v1.0.pdf" => "CHAMPS Social Behavioral Science Protocol",
+    "CHAMPS-Diagnosis-Standards.pdf" => "CHAMPS DeCoDe Diagnosis Standards" ,
+    "CHAMPS-Manual-v3.pdf" => "CHAMPS Manual",
+    "CHAMPS Online De-Identified DTA.pdf" => "CHAMPS Online De-Identified Data Transfer Agreement")
+
+    # Instrument - specify file extension in name
+    instrumentfolder::String = "Instruments"
+    instruments::Dict{String,String} = Dict("cdc_93759_DS9.pdf" => "CHAMPS_deid_verbal_autopsy.csv")
+
+    # Ethics - specify file extension in name
+    ethicsfolder::String = "Ethics"
+    ethics::Dict{String,Vector{String}} = Dict("ICF-04 CHAMPS VA v1.1.pdf" => ["ICF-04 CHAMPS VA v1.1","Local ethics institution", "CHAMPS-Mortality-Surveillance-Protocol-v1.3.pdf"],
+    "ICF-03_CHAMPS non_MITS consent v1.3.pdf" => ["ICF-03_CHAMPS non_MITS consent v1.3","Local ethics institution", "CHAMPS-Mortality-Surveillance-Protocol-v1.3.pdf"],
+    "ICF-01 CHAMPS MITS procedures v1.3.pdf" => ["ICF-01 CHAMPS MITS procedures v1.3","Local ethics institution", "CHAMPS-Mortality-Surveillance-Protocol-v1.3.pdf"])
+
+    # CSV format
     delim::Char = ','
     quotechar::Char = '"'
     dateformat::String = "yyyy-mm-dd"
     decimal::Char = '.'
 
-    # Protocol - specify file extension in name
-    protocolfolder::String = "Protocols"
-    protocols::Dict{String,String} = Dict("CHAMPS Mortality Surveillance Protocol" => "CHAMPS-Mortality-Surveillance-Protocol-v1.3.pdf",
-        "CHAMPS Social Behavioral Science Protocol" => "CHAMPS-Social-Behavioral-Science-Protocol-v1.0.pdf",
-        "Determination of DeCoDe Diagnosis Standards" => "CHAMPS-Diagnosis-Standards.pdf",
-        "CHAMPS Manual version 1.0" => "CHAMPS-Manual-v3.pdf",
-        "CHAMPS Online De-Identified Data Transfer Agreement" => "CHAMPS Online De-Identified DTA.pdf")
-
-    # Instrument - specify file extension in name
-    instrumentfolder::String = "Instruments"
-    instruments::Dict{String,String} = Dict("CHAMPS Verbal Autopsy Questionnaire" => "cdc_93759_DS9.pdf")
-
-    # Ethics - assume file extension pdf
-    # Document dictionaries need to match with comittee and reference
-    ethicsfolder::String = "Ethics"
-    ethics::Dict{String,Vector{String}} = Dict("Local ethics institution" => ["ICF-04 CHAMPS VA v1.1", "ICF-04 CHAMPS VA v1.1.docx"],
-    "Local ethics institution" => ["ICF-03_CHAMPS non_MITS consent v1.3", "ICF-03_CHAMPS non_MITS consent v1.3.docx"],
-    "Local ethics institution" => ["ICF-01 CHAMPS MITS procedures v1.3", "ICF-01 CHAMPS MITS procedures v1.3.docx"])
-    
-    # Data dictionaries
-    domain_name::String = "CHAMPS"
-    domain_description::String = "Raw CHAMPS level-2 deidentified data"
-    datadictionaries::Vector{String} = ["Format_CHAMPS_deid_basic_demographics",
-        "Format_CHAMPS_deid_verbal_autopsy",
-        "Format_CHAMPS_deid_decode_results",
-        "Format_CHAMPS_deid_tac_results",
-        "Format_CHAMPS_deid_lab_results"]
-    tac_vocabulary::String = "CHAMPS_deid_tac_vocabulary.xlsx"
 end
+
+
 """
 Provide COMSA Mozambique specific information
 """
-Base.@kwdef struct COMSASource <: AbstractSource
-    name::String = "COMSA"
+
+Base.@kwdef mutable struct COMSAMZSource <: AbstractSource 
+
+    # Domain info
+    name::String = "COMSAMZ"
+
+    # Study type
+    study_type_id::Integer = 1
+
+    # Sites
     datafolder::String = "De_identified_data"
-
-    site_data::String = "Comsa_WHO_VA_20230308"
+    site_data::String = "Comsa_WHO_VA_20230308.csv"
     site_col::String = "provincia"
-    country_col::String = ""
-    country_iso2::String = "MW"
-    id_col::String = "comsa_id" #column that uniquely identifies a death
-
-    delim::Char = ','
-    quotechar::Char = '"'
-    dateformat::String = "u dd, yyyy" #not "dd-u-yyyy" 
-    decimal::Char = '.'
+    country_name::String = "Mozambique" 
 
     # Protocol - specify file extension in name
     protocolfolder::String = "Protocols"
-    protocols::Dict{String,String} = Dict("Countrywide Mortality Surveillance for Action (COMSA) Mozambique (Formative Research)" => "COMSA-FR-protocol_version-1.0_05July2017.pdf",
-        "Countrywide Mortality Surveillance for Action (COMSA) Mozambique" => "COMSA-protocol_without-FR_version-1.1_15June2017_clean_REVISED.pdf",
-        "COMSA Data Access Plan" => "COMSA-Data-Access-Plan.pdf",
-        "COMSA Data Use Agreement" => "Data Use Agreement (DUA) - Comsa.pdf")
+    protocols::Dict{String,String} = Dict("COMSA-FR-protocol_version-1.0_05July2017.pdf" => "Countrywide Mortality Surveillance for Action (COMSA) Mozambique (Formative Research)",
+    "COMSA-protocol_without-FR_version-1.1_15June2017_clean_REVISED.pdf" => "Countrywide Mortality Surveillance for Action (COMSA) Mozambique",
+    "COMSA-Data-Access-Plan.pdf" => "COMSA Data Access Plan",
+    "Data Use Agreement (DUA) - Comsa.pdf" => "COMSA Data Use Agreement")
 
-    # Instrument - specify file extension
+    # Instrument - specify file extension in name
     instrumentfolder::String = "Instruments"
-    instruments::Dict{String,String} = Dict("Pregnancy Version 2, June 23, 2017" => "1.Pregnancy.pdf",
-        "Pregnancy Outcome Version 2, June 23, 2017" => "2.Preg-outcome_2-23.pdf",
-        "Death Version 2, June 23, 2017" => "3.Death_2-23.pdf",
-        "Verbal and Social Autopsy - Adults" => "5a_2018_COMSA_VASA_ADULTS-EnglishOnly_01262019_clean.pdf",
-        "Verbal and Social Autopsy - Child (4 weeks to 11 years)" => "5a_2018_COMSA_VASA_CHILD-EnglishOnly_12152018Clean.pdf",
-        "Verbal and Social Autopsy - Stillbirth, Neonatal" => "5a_2018_COMSA_VASA_SB_NN-EnglishOnly_12152018Clean.pdf",
-        "Verbal and Social Autopsy - General Information" => "5a_2018_COMSA_VASA-GenInfo_English_06272018_clean.pdf",
-        "Household Members Version 2, June 23, 2017" => "Household-members_2-23.pdf")
+    instruments::Dict{String,String} = Dict("5a_2018_COMSA_VASA_ADULTS-EnglishOnly_01262019_clean.pdf" => "Comsa_WHO_VA_20230308.csv",
+    "5a_2018_COMSA_VASA_CHILD-EnglishOnly_12152018Clean.pdf" => "Comsa_WHO_VA_20230308.csv",
+    "5a_2018_COMSA_VASA_SB_NN-EnglishOnly_12152018Clean.pdf" => "Comsa_WHO_VA_20230308.csv",
+    "5a_2018_COMSA_VASA-GenInfo_English_06272018_clean.pdf" => "Comsa_WHO_VA_20230308.csv" #,
+    # "3.Death_2-23.pdf" => "Comsa_death_20230308.csv",
+    # "2.Preg-outcome_2-23.pdf" => "Comsa_pregnancy_outcome_20230308.csv",
+    # "1.Pregnancy.pdf" => "Comsa_pregnancy_20230308.csv",
+    # "Household-members_2-23.pdf" => "Comsa_household_20230308.csv"
+    )
 
-    # Ethics - assume file extension pdf
+    # Ethics - specify file extension in name
     ethicsfolder::String = "Ethics"
-    ethics::Dict{String,Vector{String}} = Dict("National Health Bioethics Committee of Mozambique" => ["adult vasa - version 1, 2020 07 15", "adult vasa - version 1, 2020 07 15.docx"],
-    "National Health Bioethics Committee of Mozambique" => ["child assent vasa - version 1, 2020 07 15", "child assent vasa - version 1, 2020 07 15.docx"])
+    ethics::Dict{String,Vector{String}} = Dict("adult vasa - version 1, 2020 07 15.docx" => ["adult vasa - version 1", "National Health Bioethics Committee of Mozambique", "COMSA-protocol_without-FR_version-1.1_15June2017_clean_REVISED.pdf"],
+    "child assent vasa - version 1, 2020 07 15.docx" => ["child assent vasa - version 1", "National Health Bioethics Committee of Mozambique", "COMSA-protocol_without-FR_version-1.1_15June2017_clean_REVISED.pdf"])
 
-    # Data dictionaries
-    domain_name::String = "COMSA"
-    domain_description::String = "COMSA Mozambique verbal autopsy dictionary"
-    datadictionaries::Vector{String} = ["Format_Comsa_WHO_VA_20230308"]
-    tac_vocabulary::String = ""
+    # CSV format
+    delim::Char = ','
+    quotechar::Char = '"'
+    dateformat::String = "u dd, yyyy" 
+    decimal::Char = '.'
+
 end
 
 """
 Provide COMSA Sierra Leone (HEALSL) specific information
 """
-Base.@kwdef struct HEALSLSource <: AbstractSource
+
+Base.@kwdef mutable struct HEALSLSource <: AbstractSource 
+
+    # Domain info
     name::String = "HEALSL"
+
+    # Study type
+    study_type_id::Integer = 1
+
+    # Sites
     datafolder::String = "De_identified_data"
-
-    site_data::String = "healsl_all_v1"
+    site_data::String = "healsl_all_v1.csv"
     site_col::String = "id10057"
-    country_col::String = ""
-    country_iso2::String = "SL"
-    id_col::String = "rowid" #column that uniquely identifies a death
+    country_name::String = "Sierra Leone"
 
+    # Protocol - specify file extension in name
+    protocolfolder::String = "Protocols"
+    protocols::Dict{String,String} = Dict("4_COMSA Protocol - 27-Feb-2022.pdf" => "HEAL-SL (COMSA Sierra Leone) Protocol",
+    "HEAL-SL Research Data Processing Notes for Extenal.pdf" => "HEAL-SL Data Processing Notes")
+
+    # Instrument - specify file extension in name
+    instrumentfolder::String = "Instruments"
+    instruments::Dict{String,String} = Dict("Adult_eVA_Questionnaire-SL.pdf" => "healsl_all_v1.csv",
+    "Child_eVA_Questionnaire-SL.pdf" => "healsl_all_v1.csv",
+    "Neonate_eVA_Questionnaire-SL.pdf" => "healsl_all_v1.csv")
+
+    # Ethics - specify file extension in name
+    ethicsfolder::String = "Ethics"
+    ethics::Dict{String,Vector{String}} = Dict("IRB Renewed.pdf" => ["IRB Renewed", "Government of Sierra Leone", "4_COMSA Protocol - 27-Feb-2022.pdf"],
+    "Annexe 2 Consent forms- 27-Feb-2022.pdf" => ["Consent forms", "Government of Sierra Leone", "4_COMSA Protocol - 27-Feb-2022.pdf"])
+
+    # CSV format
     delim::Char = ','
     quotechar::Char = '"'
-    dateformat::String = "u dd, yyyy" #not "dd-u-yyyy" 
+    dateformat::String = "u dd, yyyy" 
     decimal::Char = '.'
-
-    # Protocol - specify file extension
-    protocolfolder::String = "Protocols"
-    protocols::Dict{String,String} = Dict("COMSA Sierra Leone (HEAL-SL) Protocol" => "4_COMSA Protocol - 27-Feb-2022.pdf",
-        "COMSA Data Processing Notes" => "HEAL-SL Research Data Processing Notes for Extenal.pdf")
-
-    # Instrument - specify file extension
-    instrumentfolder::String = "Instruments"
-    instruments::Dict{String,String} = Dict("VA - Adult" => "Adult_eVA_Questionnaire-SL.pdf",
-        "VA - Child" => "Child_eVA_Questionnaire-SL.pdf",
-        "VA - Neonates" => "Neonate_eVA_Questionnaire-SL.pdf")
-
-    # Ethics - assume file extension pdf
-    ethicsfolder::String = "Ethics"
-    ethics::Dict{String,Vector{String}} = Dict("Government of Sierra Leone" => ["IRB", "IRB Renewed.pdf"],
-    "Government of Sierra Leone" => ["Consent forms", "Annexe 2 Consent forms- 27-Feb-2022.pdf"])
     
-    # Data dictionaries
-    domain_name::String = "HEALSL"
-    domain_description::String = "COMSA Sierra Leone (HEALSL) verbal autopsy dictionary"
-    datadictionaries::Vector{String} = ["Format_ddict_healsl"]
-    tac_vocabulary::String = ""
 end
 
 """
-Provide ingest specific information
+Struct for ingestion and transformation metadata
 """
-Base.@kwdef struct Ingest
+
+abstract type AbstractIngest end
+
+Base.@kwdef mutable struct sourceIngest <: AbstractIngest 
+    # Source
     source::AbstractSource
 
-    # Deaths data
-    death_file::String = ""
+    # Unique identifier of a row
+    id_col::String = "id"
 
-    # Other datasets matching to deaths
-    datasets::Dict{String,String} # Dataset name => description
+    # Domain info
+    domain_name::String = "source"
+    domain_description::String = "domain for user 001"
 
-    # Matching instruments to data sets Dataset name => instrument filename
-    datainstruments::Dict{String,String}
+    # Death file
+    death_file::String = "data_death.csv"
+    # CSV format
+    delim::Char = ','
+    quotechar::Char = '"'
+    dateformat::String = "yyyy-mm-dd"
+    decimal::Char = '.'
+    
+    # Datasets matching to deaths
+    datasets::Dict{String,String} = Dict("VA" => "data_va.csv", 
+                                         "MITS" => "data_mits.csv") 
 
-    # Metadata for ingestion and transformation
+    # Data dictionaries
+    datadictionaries::Vector{String} = ["data_va_dictionary.xlsx",
+                                        "data_mits_dictionary.xlsx"]
+
+    # Metadata for ingestion 
     ingest_desc::String = "Ingest raw de-identified data"
-
+    ingest_date::Date = today() #"yyyy-mm-dd"
+    
+    # Metadata for transformation
     transform_desc::String = "Ingest raw de-identified data"
-    code_reference::String = "RDAIngest"
+    code_reference::Vector{UInt8} = b"example code script"
     author::String = ""
+
+    # Default metadata for source ingestion
+    unit_of_analysis_id::Integer = 1 #Individual
+    transformation_type_id::Integer = 1 #Raw data ingest
+    transformation_status_id::Integer = 2 # Verified
+
+end
+
+"""
+Struct of ingest metadata for CHAMPS data 
+"""
+
+Base.@kwdef mutable struct CHAMPSIngest <: AbstractIngest 
+    # Source
+    source::AbstractSource = CHAMPSSource()
+
+    # Unique identifier of a row
+    id_col::String = "champs_deid"
+
+    # Domain info
+    domain_name::String = "CHAMPS"
+    domain_description::String = "Raw CHAMPS level-2 deidentified data"
+
+    # Death file
+    death_file::String = "CHAMPS_deid_basic_demographics.csv"
+    # CSV format
+    delim::Char = ','
+    quotechar::Char = '"'
+    dateformat::String = "yyyy-mm-dd"
+    decimal::Char = '.'
+    
+    # Datasets matching to deaths
+    datasets::Dict{String,String} = Dict("CHAMPS deid basic demographics" => "CHAMPS_deid_basic_demographics.csv",
+        "CHAMPS deid verbal autopsy" => "CHAMPS_deid_verbal_autopsy.csv",
+        "CHAMPS deid decode results" => "CHAMPS_deid_decode_results.csv",
+        "CHAMPS deid tac results" => "CHAMPS_deid_tac_results.csv",
+        "CHAMPS deid lab results" => "CHAMPS_deid_lab_results.csv" )
+
+    # Data dictionaries
+    datadictionaries::Vector{String} = [
+        "CHAMPS_deid_basic_demographics_dictionary.xlsx",
+        "CHAMPS_deid_decode_results_dictionary.xlsx",
+        "CHAMPS_deid_tac_results_dictionary.xlsx",
+        "CHAMPS_deid_lab_results_dictionary.xlsx",
+        "CHAMPS_deid_verbal_autopsy_dictionary.xlsx"
+        # "Format_CHAMPS_deid_basic_demographics.csv",
+        # "Format_CHAMPS_deid_verbal_autopsy.csv",
+        # "Format_CHAMPS_deid_decode_results.csv",
+        # "Format_CHAMPS_deid_tac_results.csv",
+        # "Format_CHAMPS_deid_lab_results.csv"
+        ]
+
+    # Metadata for ingestion 
+    ingest_desc::String = "Raw CHAMPS level-2 Data accessed 20230518"
+    ingest_date::Date = today() #"yyyy-mm-dd"
+    
+    # Metadata for transformation
+    transform_desc::String = "Ingest of CHAMPS Level-2 Data"
+    code_reference::Vector{UInt8} = b"RDAIngest.ingest_data"
+    author::String = "Yue Chu, Kobus Herbst"
+
+    # Default metadata for source ingestion
+    unit_of_analysis_id::Integer = 1 #Individual
+    transformation_type_id::Integer = 1 #Raw data ingest
+    transformation_status_id::Integer = 2 # Verified
+
+end
+
+
+"""
+Struct of ingest metadata for COMSA - Mozambique data 
+"""
+
+Base.@kwdef mutable struct COMSAMZIngest <: AbstractIngest 
+    # Source
+    source::AbstractSource = COMSAMZSource()
+
+    # Unique identifier of a row
+    id_col::String = "comsa_id"
+
+    # Domain info
+    domain_name::String = "COMSAMZ"
+    domain_description::String = "Raw COMSA Mozambique level-2 deidentified data"
+
+    # Death file
+    death_file::String = "Comsa_WHO_VA_20230308.csv"
+    # CSV format
+    delim::Char = ','
+    quotechar::Char = '"'
+    dateformat::String = "u dd, yyyy" 
+    decimal::Char = '.'
+
+    # Datasets matching to deaths
+    datasets::Dict{String,String} = Dict("COMSA Mozambique deid verbal autopsy" => "Comsa_WHO_VA_20230308.csv")
+
+    # Data dictionaries
+    datadictionaries::Vector{String} = [
+        "Comsa_WHO_VA_20230308_dictionary.xlsx",
+        "Comsa_death_20230308_dictionary.xlsx"
+        # "Format_Comsa_death_20230308.csv",
+        # "Format_Comsa_WHO_VA_20230308.csv"
+    ]
+
+    # Metadata for ingestion 
+    ingest_desc::String = "Raw COMSA Mozambique level-2 Data accessed 20230518"
+    ingest_date::Date = today() #"yyyy-mm-dd"
+    
+    # Metadata for transformation
+    transform_desc::String = "Ingest of COMSA MZ Level-2 Data"
+    code_reference::Vector{UInt8} = b"RDAIngest.ingest_data"
+    author::String = "Yue Chu"
+
+    # Default metadata for source ingestion
+    unit_of_analysis_id::Integer = 1 #Individual
+    transformation_type_id::Integer = 1 #Raw data ingest
+    transformation_status_id::Integer = 2 # Verified
+    
+end
+
+"""
+Struct of ingest metadata for HEALSL (COMSA Sierra Leone) data 
+"""
+
+Base.@kwdef mutable struct HEALSLIngest <: AbstractIngest 
+    # Source
+    source::AbstractSource = HEALSLSource()
+
+    # Unique identifier of a row
+    id_col::String = "rowid"
+
+    # Domain info
+    domain_name::String = "HEALSL"
+    domain_description::String = "Raw HEAL Sierra Leone level-2 deidentified data"
+
+    # Death file
+    death_file::String = "Comsa_WHO_VA_20230308.csv"
+    # CSV format
+    delim::Char = ','
+    quotechar::Char = '"'
+    dateformat::String = "u dd, yyyy" 
+    decimal::Char = '.'
+
+    # Datasets matching to deaths
+    datasets::Dict{String,String} = Dict("HEALSL deid verbal autopsy" => "healsl_all_v1.csv")
+
+    # Data dictionaries
+    datadictionaries::Vector{String} = [
+        "healsl_all_v1_dictionary.xlsx"
+        # "Format_ddict_healsl.csv" 
+    ]
+
+    # Metadata for ingestion 
+    ingest_desc::String = "Raw HEALSL level-2 Data accessed 20230518"
+    ingest_date::Date = today() #"yyyy-mm-dd"
+    
+    # Metadata for transformation
+    transform_desc::String = "Ingest of HEALSL Level-2 Data"
+    code_reference::Vector{UInt8} = b"RDAIngest.ingest_data"
+    author::String = "Yue Chu"
+
+    # Default metadata for source ingestion
+    unit_of_analysis_id::Integer = 1 #Individual
+    transformation_type_id::Integer = 1 #Raw data ingest
+    transformation_status_id::Integer = 2 # Verified
+    
+end
+
+"""
+Struct of ingest data and dictionary of user data products
+"""
+Base.@kwdef mutable struct userIngest <: AbstractIngest 
+
+    # Unique identifier of a row
+    id_col::String = "id"
+
+    # Domain info
+    domain_name::String = "userORCID"
+    domain_description::String = "Domain for user ORCID"
+
+    # Datasets
+    datasets::Dict{String,DataFrame} #Dict("data1" => df1)
+
+    # Data dictionaries
+    datadictionaries::Dict{String,String} = ["data1.csv" => "data_1_dictionary.xlsx",
+                                            "data2.csv" => "data_2_dictionary.xlsx"]
+
+    # Transformation input - list of input datasets for each dataset
+    input_datasets::Dict{String,Vector{Integer}} = Dict("data1.csv" => [1],
+                                                        "data2.csv" => [2,3]) 
+    
+    # Metadata for ingestion 
+    ingest_desc::String = "Raw CHAMPS level-2 Data accessed 20230518"
+    ingest_date::Date = today() #"yyyy-mm-dd"
+
+    # Metadata for transformation
+    transform_desc::String = "Description of data processing methodology."
+    code_reference::Vector{UInt8} = b"code.ipynb"
+    author::String = "user ORCID"
+    
+    # Default metadata for user data ingestion
+    unit_of_analysis_id::Integer = 2 #Aggregation
+    transformation_type_id::Integer = 2 #Dataset transform
+    transformation_status_id::Integer = 1 # Unverified
+
+    # CSV format - specify if csv
+    delim::Char = ','
+    quotechar::Char = '"'
+    dateformat::String = "yyyy-mm-dd"
+    decimal::Char = '.'
+    
 end
 
 """
     ingest_source(source::AbstractSource, dbpath::String, dbname::String,
     datapath::String; sqlite=true)
 
-
-Step 1: 
-Ingest macro data of sources: sites, instruments, protocols, ethics, vocabularies 
+Ingest macro data of sources: sites, instruments, protocols, ethics
 
 datapath: root folder with data from all sources [DATA_INGEST_PATH]
+dbpath: path to open RDA database
+dbname: name of RDA database
 """
+
 function ingest_source(source::AbstractSource, dbpath::String, dbname::String,
-    datapath::String; sqlite=true)
+    datapath::String, iso3_path::String; sqlite=true)
     db = opendatabase(dbpath, dbname; sqlite)
     try
         DBInterface.transaction(db) do
 
-            source_id = add_source(source, db)
+            source_id = add_source(source.name, db)
+
+            # Add study type id
+            updatevalue(db, "sources", "source_id", "study_type_id", source_id, source.study_type_id)
 
             # Add sites and country iso2 codes
-            add_sites(source, db, source_id, datapath)
+            add_sites(source, db, source_id, datapath, iso3_path)
+            #@info "Site names, country names and country iso3 codes ingested."
 
             # Add instruments
             add_instruments(source, db, datapath)
+            #@info "Instrument document $value ingested."
 
             # Add Protocols
             add_protocols(source, db, datapath)
 
             # Add Ethics
-            add_ethics(source, db, datapath; source_id)
+            add_ethics(source, db, datapath) 
 
         end
 
@@ -273,185 +559,179 @@ function ingest_source(source::AbstractSource, dbpath::String, dbname::String,
         DBInterface.close!(db)
     end
 end
+ 
 
 """
-    ingest_dictionary(source::AbstractSource, dbpath::String, dbname::String, dictionarypath::String, datapath::String; sqlite=true)
+    add_sites(source::AbstractSource, db::DBInterface.Connection, sourceid::Integer, datapath::String, iso3_path::String)
 
-Step 2: 
-Ingest data dictionaries, add variables and vocabularies
+Add sites, countries and country iso3 codes to sites table
 """
-function ingest_dictionary(source::AbstractSource, dbpath::String, dbname::String, dictionarypath::String, datapath::String; sqlite=true)
-    db = opendatabase(dbpath, dbname; sqlite)
+function add_sites(source::AbstractSource, db::DBInterface.Connection, sourceid::Integer, datapath::String, iso3_path::String)
+    
+    # Get sites of the study
+    df = read_data(DocCSV(joinpath(datapath, source.name, source.datafolder),
+        source.site_data,
+        source.delim, source.quotechar, source.dateformat, source.decimal))
 
-    try
-        DBInterface.transaction(db) do
-            # @info "Ingest dictionaries for $(source.name). sqlite = $sqlite"
-            domain = add_domain(db, source.domain_name, source.domain_description)
-
-            # Add variables
-            for filename in source.datadictionaries
-                variables = read_variables(source, dictionarypath, filename)
-                add_variables(variables, db, domain)
-                # @info "Variables from $filename ingested."
-            end
-
-            # Mark key fields for easier reference later
-            row = lookup_variables(db, source.id_col, domain)
-            DBInterface.execute(db, "UPDATE variables SET keyrole = 'id' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
-
-            row = lookup_variables(db, source.site_col, domain)
-            DBInterface.execute(db, "UPDATE variables SET keyrole = 'site_name' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
-
-            #Add vocabularies for TAC results with multi-gene
-            if source.tac_vocabulary != ""
-                ingest_tac_vocabulary(source, db, datapath)               
-            end
-        end
-        return nothing
-    finally
-        DBInterface.close!(db)
+    if (:country_col in fieldnames(typeof(source))) && (source.country_col != "")
+        sites = unique(select(df, Symbol(source.site_col) => :site_name, 
+                                Symbol(source.country_col) => :country_name))
+    else
+        sites = unique(select(df, Symbol(source.site_col) => :site_name))
+        sites.country_name = fill(source.country_name, nrow(sites))
     end
+    
+    # Identify country name input and add iso3 
+    iso3_mapping = CSV.File(iso3_path) |> DataFrame
+    if all(length.(sites.country_name) .== 2)
+        sites = transform(sites, :country_name => ByRow(uppercase) => :iso2)
+        sites = leftjoin(sites, iso3_mapping, on = :iso2)
+    elseif all(length.(sites.country_name) .== 3)
+        sites = transform(sites, :country_name => ByRow(uppercase) => :iso3)
+        sites = leftjoin(sites, iso3_mapping, on = :iso3)
+    else
+        sites.country = sites.country_name
+        sites = leftjoin(sites, iso3_mapping, on = :country)
+    end
+
+    sites = select(sites, :site_name, :country => :country_name, :iso3 => :country_iso3)
+
+    # Add sourceid 
+    insertcols!(sites, 1, :source_id => sourceid)
+
+    savedataframe(db, sites, "sites")
+    
+    return nothing
+end
+
+
+"""
+    add_instruments(source::AbstractSource, db::SQLite.DB, datapath::String)
+
+Add survey instruments
+"""
+
+function add_instruments(source::AbstractSource, db::DBInterface.Connection, datapath::String)
+
+    # Insert instrument names
+    stmt_name = prepareinsertstatement(db, "instruments", ["name", "description"])
+
+    # Insert instrument documents
+    stmt_doc = prepareinsertstatement(db, "instrument_documents", ["instrument_id", "name", "document"])
+
+    for (key, value) in source.instruments
+
+        # Add instruments
+        DBInterface.execute(stmt_name, [key, value]) 
+
+        # Get instrument id
+        instrument_id = get_namedkey(db, "instruments", key, Symbol("instrument_id"))
+
+        # Add instrument documents
+        file = read_data(DocPDF(joinpath(datapath, source.name, source.instrumentfolder), "$key"))
+        DBInterface.execute(stmt_doc, [instrument_id, key, file])
+        
+    end
+    return nothing
+end
+
+
+"""
+    add_protocols(source::AbstractSource, db::SQLite.DB, datapath::String)
+
+Add protocols
+Todo: how protocols link to enthics_id, need a mapping dictionary? 
+"""
+function add_protocols(source::AbstractSource, db::DBInterface.Connection, datapath::String)
+
+    # Insert protocol names
+    stmt_name = prepareinsertstatement(db, "protocols", ["name", "description"])
+
+    # Insert protocol documents
+    stmt_doc = prepareinsertstatement(db, "protocol_documents", ["protocol_id", "name", "document"])
+
+    # Insert site protocols #Todo: current assumes all sites using standardized protocols
+    stmt_site = prepareinsertstatement(db, "site_protocols", ["site_id", "protocol_id"])
+
+    sites = selectsourcesites(db, source)
+
+    for (key, value) in source.protocols
+
+        # Add protocol
+        DBInterface.execute(stmt_name, [key, value])
+
+        # Get protocol id
+        protocol_id = get_namedkey(db, "protocols", key, Symbol("protocol_id"))
+
+        # Add site protocol
+        for site in eachrow(sites)
+            DBInterface.execute(stmt_site, [site.site_id, protocol_id])
+        end
+
+        # Add protocol documents
+        file = read_data(DocPDF(joinpath(datapath, source.name, source.protocolfolder), "$key"))
+        DBInterface.execute(stmt_doc, [protocol_id, key, file])
+        # @info "Protocol document $value ingested."
+    end
+    return nothing
+end
+
+
+"""
+    add_ethics(source::AbstractSource, db::DBInterface.Connection, datapath::String)
+
+Ethics document, committee and reference need to be in matching order
+
+"""
+
+function add_ethics(source::AbstractSource, db::DBInterface.Connection, datapath::String)
+
+    source_id = get_source(db, source.name)
+
+    # Insert ethics names
+    stmt_name = prepareinsertstatement(db, "ethics", ["source_id", "name", "ethics_committee", "ethics_reference"])
+
+    for (key, value) in source.ethics
+        DBInterface.execute(stmt_name, [source_id, key, value[2], value[3]])
+    end
+
+    # Insert ethics documents
+    stmt_doc = prepareinsertstatement(db, "ethics_documents", ["ethics_id", "name", "description", "document"])
+
+    for (key, value) in source.ethics
+        file = read_data(DocPDF(joinpath(datapath, source.name, source.ethicsfolder), "$key"))
+
+        # Get ethics id
+        ethics_id = get_namedkey(db, "ethics", key, Symbol("ethics_id"))
+
+        DBInterface.execute(stmt_doc, [ethics_id, key, value[1], file])
+    
+        # Update ethics_id in protocols
+        protocol_id = get_namedkey(db, "protocols", value[3], Symbol("protocol_id"))
+
+        sql = """
+        UPDATE protocols
+        SET 
+            ethics_id = ?
+        WHERE protocol_id = ? 
+        """
+        update_stmt = DBInterface.prepare(db, sql)
+        DBInterface.execute(update_stmt, [ethics_id, protocol_id])
+
+        # @info "Ethics document $(value[2]) ingested. Ethics id = $ethics_id."
+    end
+    return nothing
 end
 
 """
-    ingest_tac_vocabulary(source::AbstractSource, db, datapath)
-
-TBW
-"""
-function ingest_tac_vocabulary(source::AbstractSource, db, datapath)
-    domain_id = get_domain(db, source.domain_name)
-    xf = XLSX.readxlsx(joinpath(datapath, source.name, source.datafolder, source.tac_vocabulary))
-    pathogens = pathogens = XLSX.gettable(xf[1]) |> DataFrame
-    insertcols!(pathogens, 1, :vocabulary_id => 0) #to record saved vocabulary
-    select!(pathogens, :vocabulary_id, :Pathogen => :name, Symbol("Multi-target result code") => :description)
-    # Add vocabulary for each pathogen
-    for row in eachrow(pathogens)
-        vocab_id = insertwithidentity(db, "vocabularies", ["name", "description"], [row.name, row.description], "vocabulary_id")
-        row.vocabulary_id = vocab_id
-        updatevariable_vocabulary(db, "_" * row.name, domain_id, vocab_id)
-    end
-    # Add vocabulary items
-    stmt = prepareinsertstatement(db, "vocabulary_items", ["vocabulary_id", "value", "code", "description"])
-    for row in eachrow(pathogens)
-        #get details for each pathogen in sheet with the pathogen name
-        pathogen_details = XLSX.gettable(xf[row.name]) |> DataFrame
-        #Group by Interpretation to get unique codes
-        select!(pathogen_details, :Interpretation => ByRow(x -> strip(x)) => :code, AsTable(Not(:Interpretation)) =>
-            ByRow(x -> replace(join([join([keys(x)[i], values(x)[i]], ":") for i in 1:length(x)], ";"), " " => "")) => :values)
-        items = combine(groupby(pathogen_details, :code), groupindices => :value, :values => (x -> join(x, "|")) => :description)
-        #convert values to string to keep ODBC happy
-        transform!(items, :code => ByRow(x -> String(x)) => :code, :description => ByRow(x -> String(x)) => :description)
-        for row1 in eachrow(items)
-            DBInterface.execute(stmt, [row.vocabulary_id, row1.value, row1.code, row1.description])
-        end
-    end
-end
-
-"""
-    ingest_deaths(ingest::Ingest, dbpath::String, dbname::String, datapath::String; sqlite=true)
-
-Step 3: 
-Ingest deaths to deathrows, return transformation_id and ingestion_id
-"""
-function ingest_deaths(ingest::Ingest, dbpath::String, dbname::String, datapath::String; sqlite=true)
-    db = opendatabase(dbpath, dbname; sqlite)
-
-    try
-        DBInterface.transaction(db) do
-
-            source_id = get_source(db, ingest.source.name)
-
-            # Add ingestion and transformation info
-            ingestion_id = insertwithidentity(db, "data_ingestions", ["source_id", "date_received", "description"], [source_id, isa(db, SQLite.DB) ? Dates.format(today(), "yyyy-mm-dd") : today(), ingest.ingest_desc], "data_ingestion_id")
-            # transformation should not be created for the death ingestion
-
-            # Ingest deaths
-            deaths = read_data(DocCSV(joinpath(datapath, ingest.source.name, ingest.source.datafolder),
-                ingest.death_file, ingest.source.delim, ingest.source.quotechar, ingest.source.dateformat, ingest.source.decimal))
-            sites = selectdataframe(db, "sites", ["site_id", "site_name"], ["source_id"], [source_id])
-
-            sitedeaths = innerjoin(transform!(deaths, Symbol(ingest.source.site_col) => :site_name),
-                sites, on=:site_name, matchmissing=:notequal)
-
-            savedataframe(db, select(sitedeaths, :site_id, Symbol(ingest.source.id_col) => :external_id,
-                    [] => Returns(ingestion_id) => :data_ingestion_id, copycols=false), "deaths")
-
-
-            return ingestion_id #, transformation_id
-        end
-
-    finally
-        DBInterface.close!(db)
-    end
-end
-
-"""
-    ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::String,
-    transformation_id::Integer, ingestion_id::Integer, death_ingestion_id=nothing)
-
-Step 4: 
-Import datasets, and link datasets to deaths
-* Ingestion_id can be from step 3 outputs if ingesting both death and datasets at the same time, if missing an ingestion will be created.
-"""
-function ingest_data(ingest::Ingest, dbpath::String, dbname::String, datapath::String; ingestion_id=0, sqlite=true)
-    db = opendatabase(dbpath, dbname; sqlite)
-    try
-        source_id = get_source(db, ingest.source.name)
-        domain_id = get_domain(db, ingest.source.name)
-        death_idvar = get_variable_id(db, domain_id, ingest.source.id_col)
-
-        DBInterface.transaction(db) do
-            if ingestion_id == 0
-                ingestion_id = insertwithidentity(db, "data_ingestions", ["source_id", "date_received", "description"], [source_id, isa(db, SQLite.DB) ? Dates.format(today(), "yyyy-mm-dd") : today(), ingest.ingest_desc], "data_ingestion_id")
-            end
-            transformation_id = insertwithidentity(db, "transformations", ["transformation_type_id", "transformation_status_id", "description", "code_reference", "date_created", "created_by"],
-                [1, 1, ingest.transform_desc, ingest.code_reference, isa(db, SQLite.DB) ? Dates.format(today(), "yyyy-mm-dd") : today(), ingest.author], "transformation_id")
-
-            for (dataset_desc, dataset_name) in ingest.datasets
-
-                # Import datasets
-                ds = read_data(DocCSV(joinpath(datapath, ingest.source.name, ingest.source.datafolder), dataset_name,
-                    ingest.source.delim, ingest.source.quotechar, ingest.source.dateformat, ingest.source.decimal))
-
-                dataset_id = save_dataset(db, ds, dataset_name, dataset_desc,
-                    domain_id, transformation_id, ingestion_id)
-
-                # Link to deathrows
-                if !death_in_ingest(db, ingestion_id)
-                    # @info "Death data is not part of currrent data ingest $ingestion_id"
-                    death_ingestion_id = get_last_deathingest(db, source_id)
-                    # @info "Death ingestion id not specified. By default, use lastest ingested deaths from source $(ingest.source.name) from ingestion id $death_ingestion_id."
-                else
-                    death_ingestion_id = ingestion_id
-                end
-                # @info "Linking dataset $dataset_name to deathrows from ingestion id $death_ingestion_id, dataset_id = $dataset_id, death_idvar = $death_idvar"
-                link_deathrows(db, death_ingestion_id, dataset_id, death_idvar)
-
-                # @info "Dataset $dataset_name imported and linked to deathrows."
-
-            end
-
-            # Link to instruments in instrument_datasets
-            if !isempty(ingest.datainstruments)
-                for (instrument_name, dataset_name) in ingest.datainstruments #instrument name, dataset name
-                    link_instruments(db, instrument_name, dataset_name)
-                end
-            end
-        end
-    finally
-        DBInterface.close!(db)
-    end
-end
-
-"""
-    add_source(source::AbstractSource, db::DBInterface.Connection)
+    add_source(source_name, db::DBInterface.Connection)
 
 Add source `name` to the sources table, and returns the `source_id`
 """
-function add_source(source::AbstractSource, db::DBInterface.Connection)
-    id = get_source(db, source.name)
+function add_source(source_name::String, db::DBInterface.Connection)
+    id = get_source(db, source_name)
     if ismissing(id)  # insert source
-        id = RDAIngest.insertwithidentity(db, "sources", ["name"], [source.name], "source_id")
+        id = insertwithidentity(db, "sources", ["name"], [source_name], "source_id")
     end
     return id
 end
@@ -465,64 +745,107 @@ function get_source(db::DBInterface.Connection, name)
     return get_namedkey(db, "sources", name, :source_id)
 end
 
-"""
-    get_namedkey(db::DBInterface.Connection, table, key, keycol)
 
- Return the integer key from table `table` in column `keycol` (`keycol` must be a `Symbol`) for key with name `key`
 """
-function get_namedkey(db::DBInterface.Connection, table, key, keycol)
-    stmt = prepareselectstatement(db, table, ["*"], ["name"])
-    df = DBInterface.execute(stmt, [key]) |> DataFrame
-    if nrow(df) == 0
-        return missing
-    else
-        return df[1, keycol]
+    ingest_deaths(ingest::AbstractIngest, dbpath::String, dbname::String, datapath::String; sqlite=true)
+
+Ingest deaths to deathrows for source data, return ingestion_id. 
+"""
+
+function ingest_deaths(ingest::AbstractIngest, dbpath::String, dbname::String, datapath::String; sqlite=true)
+    db = opendatabase(dbpath, dbname; sqlite)
+
+    try
+        DBInterface.transaction(db) do
+
+            source_id = get_source(db, ingest.source.name)
+
+            # Add ingestion info
+            ingestion_id = insertwithidentity(db, "data_ingestions", ["source_id", "date_received", "description"], [source_id, isa(db, SQLite.DB) ? Dates.format(today(), "yyyy-mm-dd") : today(), ingest.ingest_desc], "data_ingestion_id")
+            # transformation should not be created for the death ingestion
+
+            # Ingest deaths
+            deaths = read_data(DocCSV(joinpath(datapath, ingest.source.name, ingest.source.datafolder),
+                ingest.death_file, ingest.delim, ingest.quotechar, ingest.dateformat, ingest.source.decimal))
+            sites = selectdataframe(db, "sites", ["site_id", "site_name"], ["source_id"], [source_id])
+
+            sitedeaths = innerjoin(transform!(deaths, Symbol(ingest.source.site_col) => :site_name),
+                sites, on=:site_name, matchmissing=:notequal)
+
+            savedataframe(db, select(sitedeaths, :site_id, Symbol(ingest.id_col) => :external_id,
+                    [] => Returns(ingestion_id) => :data_ingestion_id, copycols=false), "deaths")
+
+
+            return ingestion_id 
+        end
+
+    finally
+        DBInterface.close!(db)
     end
 end
 
 """
-    get_variable_id(db::DBInterface.Connection, domain, name)
+    ingest_dictionary(ingest::AbstractIngest, dbpath::String, dbname::String, dictionarypath::String; sqlite=true)
 
-    Returns the `variable_id` of variable named `name` in domain with id `domain`
+Ingest data dictionaries, add variables and vocabularies
+Expect either an xlsx with sheets "variables" and "vocabularies"
+Or a csv with single sheets containing vocabularies as multiple lines, with delimiter ";"
 """
-function get_variable_id(db::ODBC.Connection, domain, name)
-    stmt = prepareselectstatement(db, "variables", ["variable_id"], ["domain_id", "name"])
-    result = DBInterface.execute(stmt, [domain, name]; iterate_rows=true) |> DataFrame
-    if nrow(result) == 0
-        return missing
-    else
-        return result[1, :variable_id]
+
+function ingest_dictionary(ingest::AbstractIngest, dbpath::String, dbname::String, dictionarypath::String; sqlite=true)
+    db = opendatabase(dbpath, dbname; sqlite)
+
+    try
+        DBInterface.transaction(db) do
+            # @info "Ingest dictionaries for $(source.name). sqlite = $sqlite"
+            domain = add_domain(db, ingest.domain_name, ingest.domain_description)
+
+            # Add variables
+            for filename in ingest.datadictionaries
+
+                #filename = "CHAMPS_deid_basic_demographics_dictionary.xlsx"
+                ext = split(filename, ".") |> last
+                if ext == "xlsx"
+                    sheets = XLSX.readxlsx(joinpath(dictionarypath, "$(ingest.domain_name)", filename))
+                    if length(XLSX.sheetnames(sheets))==1
+                        dict_var = DocXLSX(joinpath(dictionarypath, "$(ingest.domain_name)"), filename, XLSX.sheetnames(sheets)[1]) 
+                        dict_voc = missing
+                    else
+                        #Expected xlsx with sheets variables and vocabularies 
+                        dict_var = DocXLSX(joinpath(dictionarypath, "$(ingest.domain_name)"), filename, "variables") # Variables
+                        dict_voc = DocXLSX(joinpath(dictionarypath, "$(ingest.domain_name)"), filename, "vocabularies") # Vocabularies
+                    end
+                elseif ext == "csv"
+                    #Expected csv with single sheet delimited by semi-colons, not the default source delimeter
+                    dict_var = DocCSV(joinpath(dictionarypath, "$(source.domain_name)"), filename, 
+                    ';', ingest.quotechar, ingest.dateformat, ingest.decimal)
+                    dict_voc = missing
+                else 
+                    error("Data dictionary '$filename' not supported. Please use .xlsx or .csv format.")
+                end
+                
+                variables = read_variables(dict_var, dict_voc)
+                add_variables(variables, db, domain)
+
+                # @info "Variables from $filename ingested."
+            end
+
+            # Mark key fields for easier reference later
+            row = lookup_variables(db, ingest.id_col, domain)
+            DBInterface.execute(db, "UPDATE variables SET keyrole = 'id' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
+
+            # if source is available in ingest
+            if ingest.source!=Missing  
+                row = lookup_variables(db, ingest.source.site_col, domain)
+                DBInterface.execute(db, "UPDATE variables SET keyrole = 'site_name' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
+            end
+        end
+        return nothing
+    finally
+        DBInterface.close!(db)
     end
 end
-"""
-    get_variable_id(db::SQLite.DB, domain, name)
 
-Returns the `variable_id` of variable named `name` in domain with id `domain`
-"""
-function get_variable_id(db::SQLite.DB, domain, name)
-    stmt = prepareselectstatement(db, "variables", ["variable_id"], ["domain_id", "name"])
-    result = DBInterface.execute(stmt, [domain, name]) |> DataFrame
-    if nrow(result) == 0
-        return missing
-    else
-        return result[1, :variable_id]
-    end
-end
-
-"""
-    get_variable(db::SQLite.DB, variable_id)
-
-Returns the entry of variable with `variable_id`
-"""
-function get_variable(db::SQLite.DB, variable_id)
-    stmt = prepareselectstatement(db, "variables", ["*"], ["variable_id"])
-    result = DBInterface.execute(stmt, [variable_id]) |> DataFrame
-    if nrow(result) == 0
-        return missing
-    else
-        return result
-    end
-end
 
 """
     add_domain(db::DBInterface.Connection, domain_name::String, domain_description::String)
@@ -532,7 +855,7 @@ Add domain to the domain table if not exist, and returns the domain id
 function add_domain(db::DBInterface.Connection, domain_name::String, domain_description::String="")
     domain = get_domain(db, domain_name)
     if ismissing(domain)  # insert source
-        domain = RDAIngest.insertwithidentity(db, "domains", ["name", "description"], [domain_name, domain_description], "domain_id")
+        domain = insertwithidentity(db, "domains", ["name", "description"], [domain_name, domain_description], "domain_id")
     end
     return domain
 end
@@ -544,187 +867,119 @@ Return the domain_id for domain named `domain_name`
 """
 get_domain(db::DBInterface.Connection, domain_name::String) = get_namedkey(db, "domains", domain_name, Symbol("domain_id"))
 
-"""
-    add_sites(source::CHAMPSSource, db::DBInterface.Connection, sourceid::Integer, datapath::String)
-
-Add CHAMPS sites and country iso2 codes to sites table
-"""
-function add_sites(source::CHAMPSSource, db::DBInterface.Connection, sourceid::Integer, datapath::String)
-    sites = read_sitedata(source, datapath, sourceid)
-
-    select!(sites,
-        Symbol(source.site_col) => ByRow(x -> x) => :site_name,
-        Symbol(source.country_col) => ByRow(x -> x) => :country_iso2,
-        :source_id)
-    # ODBC can't deal with InlineStrings
-    transform!(sites, :site_name => ByRow(x -> String(x)) => :site_name, :country_iso2 => ByRow(x -> String(x)) => :country_iso2)
-    savedataframe(db, sites, "sites")
-    # @info "Site names and country iso2 codes ingested."
-    return nothing
-end
-"""
-    add_sites(source::COMSASource, db::DBInterface.Connection, sourceid::Integer, datapath::String)
-
-Add COMSA sites and country iso2 codes to sites table
-"""
-function add_sites(source::COMSASource, db::DBInterface.Connection, sourceid::Integer, datapath::String)
-    sites = read_sitedata(source, datapath, sourceid)
-
-    if (source.country_iso2 == "" || !isdefined(source, Symbol("country_iso2")))
-        error("Country iso2 code not provided in data and not specified.")
-    else
-        select!(sites,
-            Symbol(source.site_col) => ByRow(x -> x) => :site_name,
-            [] => Returns(source.country_iso2) => :country_iso2,
-            :source_id)
-        # ODBC can't deal with InlineStrings
-        transform!(sites, :site_name => ByRow(x -> String(x)) => :site_name, :country_iso2 => ByRow(x -> String(x)) => :country_iso2)
-        savedataframe(db, sites, "sites")
-        # @info "Site names and country iso2 codes ingested."
-    end
-    return nothing
-end
 
 """
-    add_sites(source::HEALSLSource, db::DBInterface.Connection, sourceid::Integer, datapath::String)
+    read_variables(dict_var::DocXLSX, dict_voc::DocXLSX)
 
-Add COMSA Sierra Leone sites (districts) and country iso2 codes to sites table
+Read variable table `dict_var` listing variables, variable descriptions and data types in a dataframe.
+Read vocabulary table `dict_voc` listing vocabulary item for each variable, with descriptions in a dataframe.
+
+For dict_var read from .csv file where vocabularies are part of the variables table, dict_voc is set to be missing.
 """
-function add_sites(source::HEALSLSource, db::DBInterface.Connection, sourceid::Integer, datapath::String)
-    sites = read_sitedata(source, datapath, sourceid)
 
-    if (source.country_iso2 == "" || !isdefined(source, Symbol("country_iso2")))
-        error("Country iso2 code not provided in data and not specified.")
-    else
-        select!(sites,
-            Symbol(source.site_col) => ByRow(x -> x) => :site_name,
-            [] => Returns(source.country_iso2) => :country_iso2,
-            :source_id)
-        # ODBC can't deal with InlineStrings
-        sites = dropmissing(sites, :site_name)
-        transform!(sites, :site_name => ByRow(x -> String(x)) => :site_name, :country_iso2 => ByRow(x -> String(x)) => :country_iso2)
-        savedataframe(db, sites, "sites")
-        # @info "Site names and country iso2 codes ingested."
-    end
-    return nothing
-end
+# function read_variables(dict_var::DocXLSX, dict_voc::DocXLSX)
 
-"""
-    read_sitedata(source::AbstractSource, datapath, sourceid)
+#     vocabularies = Vector{Union{Vocabulary,Missing}}()
 
-Data are aggregated by site_col in order to identify unique sites
-"""
-function read_sitedata(source::AbstractSource, datapath, sourceid)
-    df = read_data(DocCSV(joinpath(datapath, source.name, source.datafolder),
-        source.site_data,
-        source.delim, source.quotechar, source.dateformat, source.decimal))
-    sites = combine(groupby(df, source.site_col), nrow => :n)
-    insertcols!(sites, 1, :source_id => sourceid)
-    return (sites)
-end
+#     df_var = read_data(dict_var) 
+#     df_voc = read_data(dict_voc) 
+#     if size(df_voc)[1]==0
+#         df_var.Vocabulary .= missing
+#     else
+#         for row in eachrow(df_var)
+#             if row.Column_Name in unique(df_voc.Column_Name)
+#                 push!(vocabularies, get_vocabulary(row.Column_Name, df_voc, row.Description))
+#             else
+#                 push!(vocabularies, missing)
+#             end
+#         end
+#         df_var.Vocabulary = vocabularies
+#     end
+    
+#     return df_var
+# end
 
-"""
-    add_protocols(source::AbstractSource, db::SQLite.DB, datapath::String)
+function read_variables(dict_var::DocXLSX, dict_voc::Union{Missing,DocXLSX})
 
-Add protocols
-Todo: how protocols link to enthics_id, need a mapping dictionary? 
-"""
-function add_protocols(source::AbstractSource, db, datapath::String)
+    vocabularies = Vector{Union{Vocabulary,Missing}}()
 
-    # Insert protocol names
-    stmt_name = prepareinsertstatement(db, "protocols", ["name", "description"])
-
-    # Insert protocol documents
-    stmt_doc = prepareinsertstatement(db, "protocol_documents", ["protocol_id", "name", "document"])
-
-    # Insert site protocols 
-    stmt_site = prepareinsertstatement(db, "site_protocols", ["site_id", "protocol_id"])
-
-    sites = selectsourcesites(db, source)
-
-    for (key, value) in source.protocols
-
-        # Add protocol
-        DBInterface.execute(stmt_name, [value, key])
-
-        # Get protocol id
-        protocol_id = get_namedkey(db, "protocols", value, Symbol("protocol_id"))
-
-        # Add site protocol
-        for site in eachrow(sites)
-            DBInterface.execute(stmt_site, [site.site_id, protocol_id])
+    df_var = read_data(dict_var) 
+    if dict_voc==Missing
+        df_var.Vocabulary .= missing
+    else 
+        df_voc = read_data(dict_voc) 
+        if size(df_voc)[1]==0
+            df_var.Vocabulary .= missing
+        else
+            for row in eachrow(df_var)
+                if row.Column_Name in unique(df_voc.Column_Name)
+                    push!(vocabularies, get_vocabulary(row.Column_Name, df_voc, row.Description))
+                else
+                    push!(vocabularies, missing)
+                end
+            end
+            df_var.Vocabulary = vocabularies
         end
-
-        # Add protocol documents
-        file = read_data(DocPDF(joinpath(datapath, source.name, source.protocolfolder), "$value"))
-        DBInterface.execute(stmt_doc, [protocol_id, value, file])
-        # @info "Protocol document $value ingested."
     end
-    return nothing
+    return df_var
+end
+
+
+function read_variables(dict_var::DocCSV, dict_voc::Missing)
+    vocabularies = Vector{Union{Vocabulary,Missing}}()
+        
+    df_var = read_data(dict_var) 
+
+    for row in eachrow(df_var)
+        if !ismissing(row.Description) && length(lines(row.Description)) > 1
+            l = lines(row.Description)
+            push!(vocabularies, get_vocabulary(row.Column_Name, l))
+            row.Description = l[1]
+        else
+            push!(vocabularies, missing)
+        end
+    end
+
+    df_var.Vocabulary = vocabularies
+
+    return df_var
 end
 
 """
-    add_instruments(source::AbstractSource, db::SQLite.DB, datapath::String)
+    get_vocabulary(variable, l)::Vocabulary
 
-Add survey instruments
+Get a vocabulary, name of vocabulary in line 1 of l, vocabulary items (code and description) in subsequent lines, comma-separated
 """
-function add_instruments(source::AbstractSource, db, datapath::String)
-
-    # Insert instrument names
-    stmt_name = prepareinsertstatement(db, "instruments", ["name", "description"])
-
-    # Insert instrument documents
-    stmt_doc = prepareinsertstatement(db, "instrument_documents", ["instrument_id", "name", "document"])
-
-    for (key, value) in source.instruments
-
-        # Add instruments
-        DBInterface.execute(stmt_name, [value, key])
-
-        # Get instrument id
-        instrument_id = get_namedkey(db, "instruments", value, Symbol("instrument_id"))
-
-        # Add instrument documents
-        file = read_data(DocPDF(joinpath(datapath, source.name, source.instrumentfolder), "$value"))
-        DBInterface.execute(stmt_doc, [instrument_id, value, file])
-        # @info "Instrument document $value ingested."
+function get_vocabulary(name, l::Vector{SubString{String}})::Vocabulary
+    items = Vector{VocabularyItem}()
+    description = ""
+    for i in eachindex(l)
+        if i == 1
+            description = l[i]
+        else
+            item = split(l[i], ',')
+            push!(items, length(item) > 1 ? VocabularyItem(i - 1, item[1], item[2]) : VocabularyItem(i - 1, item[1], missing))
+        end
     end
-    return nothing
+    return Vocabulary(name, description, items)
 end
 
 """
-    add_ethics(source::AbstractSource, db::DBInterface.Connection, datapath::String)
+    get_vocabulary(variable, dataframe_vocabulary, variable_description)::Vocabulary
 
-Ethics document, committee and reference need to be in matching order
-
+Get a vocabulary items (code and description) for a variable named "name" from vocabulary dataframe
 """
-function add_ethics(source::AbstractSource, db::DBInterface.Connection, datapath::String; source_id=nothing)
-
-    if isnothing(source_id)
-        source_id = get_source(db, source.name)
+function get_vocabulary(name, df_voc, var_description)::Vocabulary
+    voc = df_voc[df_voc.Column_Name .==name,:] 
+    items = Vector{VocabularyItem}()
+    i=0
+    for row in eachrow(voc)
+        i=i+1
+        push!(items, VocabularyItem(i, row.Items, row.Description))
     end
-    # Insert ethics names
-    stmt_name = prepareinsertstatement(db, "ethics", ["source_id", "name", "ethics_committee", "ethics_reference"])
-
-    for (key, value) in source.ethics
-        DBInterface.execute(stmt_name, [source_id, value[2], key, value[1]])
-    end
-    # get inserted ethics
-    df_ethics = selectdataframe(db, "ethics", ["ethics_id", "name"], ["source_id"], [source_id])
-    # Insert ethics documents
-    stmt_doc = prepareinsertstatement(db, "ethics_documents", ["ethics_id", "name", "description", "document"])
-
-    for (key, value) in source.ethics
-        file = read_data(DocPDF(joinpath(datapath, source.name, source.ethicsfolder), "$(value[2])"))
-
-        # Get ethics id
-        ethics_id = df_ethics[df_ethics.name .== value[2], :ethics_id][1]
-
-        DBInterface.execute(stmt_doc, [ethics_id, value[2], "$key ($(value[1]))", file])
-        # @info "Ethics document $(value[2]) ingested. Ethics id = $ethics_id."
-    end
-    return nothing
+    return Vocabulary(name, var_description, items)
 end
+
 
 """
     add_variables(variables::AbstractDataFrame, db::SQLite.DB, domain_id::Integer)
@@ -768,6 +1023,7 @@ function add_variables(variables::AbstractDataFrame, db::SQLite.DB, domain_id::I
     end
     return nothing
 end
+
 """
     add_variables(variables::AbstractDataFrame, db::ODBC.Connection, domain_id::Integer)
 
@@ -825,6 +1081,7 @@ function add_variables(variables::AbstractDataFrame, db::ODBC.Connection, domain
     return nothing
 end
 
+
 """
     add_vocabulary(db::SQLite.DB, vocabulary::Vocabulary)
 
@@ -843,76 +1100,137 @@ function add_vocabulary(db, vocabulary::Vocabulary)
     return id
 end
 
-"""
-    read_variables(source::AbstractSource, dictionarypath::String, dictionaryname::String)
-
-Read a csv file listing variables, variable descriptions and data types in a dataset.
 
 """
-function read_variables(source::AbstractSource, dictionarypath::String, dictionaryname::String)
+    lookup_variables(db, variable_names, domain)
 
-    df = read_data(DocCSV(joinpath(dictionarypath, "$(source.domain_name)"), dictionaryname,
-        ';', source.quotechar, source.dateformat, source.decimal)) #dictionaries are delimited by semi-colons, not the default source delimeter
-    vocabularies = Vector{Union{Vocabulary,Missing}}()
-    for row in eachrow(df)
-        if !ismissing(row.Description) && length(lines(row.Description)) > 1
-            l = lines(row.Description)
-            push!(vocabularies, get_vocabulary(row.Column_Name, l))
-            row.Description = l[1]
-        else
-            push!(vocabularies, missing)
-        end
-    end
-    df.Vocabulary = vocabularies
-    return df
+Returns a DataFrame with dataset variable names and ids
+"""
+function lookup_variables(db, variable_names, domain)
+    names = DataFrame(:name => variable_names)
+    variables = selectdataframe(db, "variables", ["name", "variable_id", "value_type_id"], ["domain_id"], [domain]) |> DataFrame
+    return innerjoin(variables, names, on=:name) #just the variables in this dataset
 end
 
 """
-    get_vocabulary(variable, l)::Vocabulary
+read_data(datadoc)
 
-Get a vocabulary, name of vocabulary in line 1 of l, vocabulary items (code and description) in subsequent lines, comma-separated
+Read file names and formatting parameters, returns a DataFrame with the data
 """
-function get_vocabulary(name, l)::Vocabulary
-    items = Vector{VocabularyItem}()
-    description = ""
-    for i in eachindex(l)
-        if i == 1
-            description = l[i]
-        else
-            item = split(l[i], ',')
-            push!(items, length(item) > 1 ? VocabularyItem(i - 1, item[1], item[2]) : VocabularyItem(i - 1, item[1], missing))
-        end
+function read_data(datadoc::DocPDF)
+    file = joinpath(datadoc.path, "$(datadoc.name)") #.pdf or .docx needs to be specified
+    extension = last(split(datadoc.name, "."))
+    if !isfile(file)
+        error("File '$file' not found.")
+    else # lowercase(extension) == "docx"
+        df = read(file)
+        df = Base64.base64encode(df)
+        return df
     end
-    return Vocabulary(name, description, items)
 end
-
-"""
-    add_transformation(db::SQLite.DB, type::Integer, status::Integer, description::String, code_reference::String, date_created::Date, created_by::String)
-
-Add a transformation to the transformations table
-"""
-function add_transformation(db::SQLite.DB, type::Integer, status::Integer, description::String, code_reference::String, date_created::Date, created_by::String)
-    sql = """
-    INSERT INTO transformations (transformation_type_id, transformation_status_id, description, code_reference, date_created, created_by)
-    VALUES (@type, @status, @description, @code_reference, @date_created, @created_by)
-    RETURNING *;
-    """
-    stmt = DBInterface.prepare(db, sql)
-    transformation = DBInterface.execute(stmt, (type=type, status=status, description=description, code_reference=code_reference, date_created=Dates.format(date_created, "yyyy-mm-dd"), created_by=created_by)) |> DataFrame
-    if nrow(transformation) > 0
-        return transformation[1, :transformation_id]
+function read_data(datadoc::DocCSV)
+    file = joinpath(datadoc.path, "$(datadoc.name)") #.csv needs to be specified
+    if !isfile(file)
+        error("File '$file' not found.")
     else
-        error("Unable to insert transformation")
+        df = CSV.File(file; delim=datadoc.delim, quotechar=datadoc.quotechar,
+            dateformat=datadoc.dateformat, decimal=datadoc.decimal) |> DataFrame
+        return df
+    end
+end
+# function read_data(datadoc::DocXLSX)
+#     file = joinpath(datadoc.path, "$(datadoc.name)") #.xlsx needs to be specified
+#     if !isfile(file)
+#         error("File '$file' not found.")
+#     else
+#         df = DataFrame(XLSX.readdata(file, datadoc.sheetname, datadoc.cellrange), :auto)
+#         return df
+#     end
+# end
+function read_data(datadoc::DocXLSX)
+    file = joinpath(datadoc.path, "$(datadoc.name)") #.xlsx needs to be specified
+    if !isfile(file)
+        error("File '$file' not found.")
+    else
+        #df = DataFrame(XLSX.readdata(file, datadoc.sheetname), :auto)
+        df = DataFrame(XLSX.getdata(XLSX.readxlsx(file)[datadoc.sheetname]),:auto)
+        # First row as column name
+        df = rename(df,[Symbol(x) for x in values(df[1,:])])
+        # Drop first row
+        df = df[2:size(df)[1],:]
+        return df
     end
 end
 
 """
-    save_dataset(db::DBInterface.Connection, dataset::AbstractDataFrame, name::String, description::String,
+    ingest_data(ingest::AbstractIngest, dbpath::String, dbname::String, datapath::String; ingestion_id=0, sqlite=true)
+    
+    ingest datasets, for source data link to deathrows
+"""
+
+function ingest_data(ingest::AbstractIngest, dbpath::String, dbname::String, datapath::String; ingestion_id=0, sqlite=true)
+    db = opendatabase(dbpath, dbname; sqlite)
+    try
+        source_id = add_source(ingest.source.name, db)
+        domain_id = add_domain(db, ingest.domain_name, ingest.domain_description)
+        death_idvar = get_variable_id(db, domain_id, ingest.id_col)
+
+        DBInterface.transaction(db) do
+            if ingestion_id == 0
+                ingestion_id = insertwithidentity(db, "data_ingestions", ["source_id", "date_received", "description"], [source_id, isa(db, SQLite.DB) ? Dates.format(today(), "yyyy-mm-dd") : today(), ingest.ingest_desc], "data_ingestion_id")
+            end
+
+            transformation_id = insertwithidentity(db, "transformations", ["transformation_type_id", "transformation_status_id", "description", "code_reference", "date_created", "created_by"],
+                [ingest.transformation_type_id, ingest.transformation_status_id, 
+                ingest.transform_desc, ingest.code_reference, 
+                isa(db, SQLite.DB) ? Dates.format(today(), "yyyy-mm-dd") : today(), ingest.author], "transformation_id")
+
+            for (dataset_desc, dataset_name) in ingest.datasets
+
+                # Import datasets
+                ds = read_data(DocCSV(joinpath(datapath, ingest.source.name, ingest.source.datafolder), dataset_name,
+                    ingest.delim, ingest.quotechar, ingest.dateformat, ingest.decimal))
+
+                dataset_id = save_dataset(db, ds, dataset_name, dataset_desc, ingest.unit_of_analysis_id,
+                    domain_id, transformation_id, ingestion_id)
+
+                # Link to deathrows
+                if !death_in_ingest(db, ingestion_id)
+                    # @info "Death data is not part of currrent data ingest $ingestion_id"
+                    death_ingestion_id = get_last_deathingest(db, source_id)
+                    # @info "Death ingestion id not specified. By default, use lastest ingested deaths from source $(ingest.source.name) from ingestion id $death_ingestion_id."
+                else
+                    death_ingestion_id = ingestion_id
+                end
+                # @info "Linking dataset $dataset_name to deathrows from ingestion id $death_ingestion_id, dataset_id = $dataset_id, death_idvar = $death_idvar"
+                link_deathrows(db, death_ingestion_id, dataset_id, death_idvar)
+
+                # @info "Dataset $dataset_name imported and linked to deathrows."
+
+            end
+
+            # Link to instruments in instrument_datasets
+            instruments = ingest.source.instruments
+            if !isempty(instruments)
+                for (instrument_name, dataset_name) in instruments #instrument name, dataset name
+                    link_instruments(db, instrument_name, dataset_name)
+                    # @info "Linked dataset $dataset_name to instrument $instrument_name"
+                end
+            end
+        end
+    finally
+        DBInterface.close!(db)
+    end
+end
+
+
+"""
+    save_dataset(db::DBInterface.Connection, dataset::AbstractDataFrame, name::String, description::String, unit_of_analysis_id::Integer,
     domain_id::Integer, transformation_id::Integer, ingestion_id::Integer)::Integer
 
 Insert dataframe containing dataset into RDA database and returns the dataset_id
 """
-function save_dataset(db::DBInterface.Connection, dataset::AbstractDataFrame, name::String, description::String,
+function save_dataset(db::DBInterface.Connection, dataset::AbstractDataFrame, name::String, description::String, unit_of_analysis_id::Integer,
     domain_id::Integer, transformation_id::Integer, ingestion_id::Integer)::Integer
 
     variables = lookup_variables(db, names(dataset), domain_id)
@@ -921,8 +1239,8 @@ function save_dataset(db::DBInterface.Connection, dataset::AbstractDataFrame, na
     var_lookup = Dict{String,Tuple{Integer,Integer}}(zip(variables.name, variables.variable_id_type))
 
     # Add dataset entry to datasets table
-    dataset_id = insertwithidentity(db, "datasets", ["name", "date_created", "description"],
-        [name, isa(db, SQLite.DB) ? Dates.format(today(), "yyyy-mm-dd") : today(), description], "dataset_id")
+    dataset_id = insertwithidentity(db, "datasets", ["name", "date_created", "description", "unit_of_analysis_id"],
+        [name, isa(db, SQLite.DB) ? Dates.format(today(), "yyyy-mm-dd") : today(), description, unit_of_analysis_id], "dataset_id")
 
     insertdata(db, "ingest_datasets", ["data_ingestion_id", "transformation_id", "dataset_id"],
         [ingestion_id, transformation_id, dataset_id])
@@ -946,6 +1264,22 @@ function save_dataset(db::DBInterface.Connection, dataset::AbstractDataFrame, na
     # @info "Dataset $name ingested."
     return dataset_id
 end
+
+
+"""
+    add_datarows(db::SQLite.DB, nrow::Integer, dataset_id::Integer)
+
+    Define data rows in the datarows table
+"""
+function add_datarows(db::DBInterface.Connection, nrow::Integer, dataset_id::Integer)
+    stmt = prepareinsertstatement(db, "datarows", ["dataset_id"])
+    #Create a row_id for every row in the dataset
+    for i = 1:nrow
+        DBInterface.execute(stmt, [dataset_id])
+    end
+    return selectdataframe(db, "datarows", ["row_id"], ["dataset_id"], [dataset_id]) |> DataFrame
+end
+
 
 """
     add_data_column(db::SQLite.DB, variable_id, coldata)
@@ -1006,41 +1340,62 @@ function add_data_column(db::ODBC.Connection, variable_id, value_type, coldata)
     return nothing
 end
 
-"""
-    lookup_variables(db, variable_names, domain)
 
-Returns a DataFrame with dataset variable names and ids
 """
-function lookup_variables(db, variable_names, domain)
-    names = DataFrame(:name => variable_names)
-    variables = selectdataframe(db, "variables", ["name", "variable_id", "value_type_id"], ["domain_id"], [domain]) |> DataFrame
-    return innerjoin(variables, names, on=:name) #just the variables in this dataset
+    death_in_ingest(db, ingestion_id)
+
+If ingested deaths as part of ingestion_id
+"""
+function death_in_ingest(db, ingestion_id)
+    df = selectdataframe(db, "deaths", ["COUNT(*)"], ["data_ingestion_id"], [ingestion_id]) |> DataFrame
+    return nrow(df) > 0 && df[1, 1] > 0
 end
 
 """
-    link_instruments(db::SQLite.DB, instrument_name, dataset_name)
+    get_last_deathingest(source)
 
-Insert records into `instrument_datasets` table, linking datasets with instruments.
+Get ingestion id for latest death ingestion for source
 """
-function link_instruments(db::DBInterface.Connection, instrument_name::String, dataset_name::String)
-
-    # get id for dataset and matching instrument
-    dataset_id = get_namedkey(db, "datasets", dataset_name, :dataset_id)
-    instrument_id = get_namedkey(db, "instruments", instrument_name, :instrument_id)
-
-    if ismissing(dataset_id)
-        error("Data file $dataset_name is not ingested.")
+function get_last_deathingest(db::SQLite.DB, source_id::Integer)
+    sql = """
+    SELECT 
+        di.data_ingestion_id
+    FROM data_ingestions di
+    JOIN deaths d ON di.data_ingestion_id = d.data_ingestion_id
+    WHERE source_id = @source_id
+    ORDER BY di.date_received DESC
+    LIMIT 1;
+    """
+    death_ingests = DBInterface.execute(db, sql, (source_id = source_id)) |> DataFrame
+    if nrow(death_ingests) > 0
+        return death_ingests[1, :data_ingestion_id]
+    else
+        error("Death from source $source_id hasn't been ingested.")
     end
-    if ismissing(instrument_id)
-        error("Instrument file $instrument_name is not ingested.")
-    end
-
-    insertdata(db, "instrument_datasets", ["instrument_id", "dataset_id"], [instrument_id, dataset_id])
-
-    # @info "Linked dataset $dataset_name to instrument $instrument_name"
-
-    return nothing
 end
+
+"""
+    get_last_deathingest(db::ODBC.Connection, source_id::Integer)
+
+Get ingestion id for latest death ingestion for source
+"""
+function get_last_deathingest(db::ODBC.Connection, source_id::Integer)
+    sql = """
+    SELECT TOP 1
+        di.data_ingestion_id
+    FROM data_ingestions di
+    JOIN deaths d ON di.data_ingestion_id = d.data_ingestion_id
+    WHERE source_id = ?
+    ORDER BY di.date_received DESC;
+    """
+    death_ingests = DBInterface.execute(db, sql, [source_id]) |> DataFrame
+    if nrow(death_ingests) > 0
+        return death_ingests[1, :data_ingestion_id]
+    else
+        error("Death from source $source_id hasn't been ingested.")
+    end
+end
+
 
 """
     link_deathrows(db::SQLite.DB, ingestion_id, dataset_id, death_identifier)
@@ -1098,62 +1453,131 @@ function link_deathrows(db::ODBC.Connection, ingestion_id, dataset_id, death_ide
     return nothing
 end
 
-"""
-    death_in_ingest(db, ingestion_id)
 
-If ingested deaths are part of ingestion_id
-"""
-function death_in_ingest(db, ingestion_id)
-    df = selectdataframe(db, "deaths", ["COUNT(*)"], ["data_ingestion_id"], [ingestion_id]) |> DataFrame
-    return nrow(df) > 0 && df[1, 1] > 0
-end
 
 """
-dataset_in_ingest(db, dataset_id, ingestion_id)
+    link_instruments(db::SQLite.DB, instrument_name, dataset_name)
 
-If dataset_id is part of ingestion_id
+Insert records into `instrument_datasets` table, linking datasets with instruments.
 """
-function dataset_in_ingest(db, dataset_id, ingestion_id)
-    df = selectdataframe(db, "ingest_datasets", ["COUNT(*)"], ["data_ingestion_id", "dataset_id"], [ingestion_id, dataset_id]) |> DataFrame
-    return nrow(df) > 0 && df[1, 1] > 0
-end
+function link_instruments(db::DBInterface.Connection, instrument_name::String, dataset_name::String)
 
-"""
-read_data(datadoc)
+    # get id for dataset and matching instrument
+    dataset_id = get_namedkey(db, "datasets", dataset_name, :dataset_id)
+    instrument_id = get_namedkey(db, "instruments", instrument_name, :instrument_id)
 
-Read file names and formatting parameters, returns a DataFrame with the data
-"""
-function read_data(datadoc::DocPDF)
-    file = joinpath(datadoc.path, "$(datadoc.name)") #.pdf or .docx needs to be specified
-    extension = last(split(datadoc.name, "."))
-    if !isfile(file)
-        error("File '$file' not found.")
-    else # lowercase(extension) == "docx"
-        df = read(file)
-        df = Base64.base64encode(df)
-        return df
+    if ismissing(dataset_id)
+        error("Data file $dataset_name is not ingested.")
     end
+    if ismissing(instrument_id)
+        error("Instrument file $instrument_name is not ingested.")
+    end
+
+    insertdata(db, "instrument_datasets", ["instrument_id", "dataset_id"], [instrument_id, dataset_id])
+
+    return nothing
 end
-function read_data(datadoc::DocCSV)
-    file = joinpath(datadoc.path, "$(datadoc.name).csv") #default as .csv file
-    if !isfile(file)
-        error("File '$file' not found.")
+
+
+"""
+Supporting fuctions
+"""
+
+
+"""
+    get_namedkey(db::DBInterface.Connection, table, key, keycol)
+
+ Return the integer key from table `table` in column `keycol` (`keycol` must be a `Symbol`) for key with name `key`
+"""
+function get_namedkey(db::DBInterface.Connection, table, key, keycol)
+    stmt = prepareselectstatement(db, table, ["*"], ["name"])
+    df = DBInterface.execute(stmt, [key]) |> DataFrame
+    if nrow(df) == 0
+        return missing
     else
-        df = CSV.File(file; delim=datadoc.delim, quotechar=datadoc.quotechar,
-            dateformat=datadoc.dateformat, decimal=datadoc.decimal) |> DataFrame
-        return df
-    end
-end
-function read_data(datadoc::DocXLSX)
-    file = joinpath(datadoc.path, "$(datadoc.name)") #.xlsx needs to be specified
-    if !isfile(file)
-        error("File '$file' not found.")
-    else
-        df = DataFrame(XLSX.readdata(file, datadoc.sheetname, datadoc.cellrange), :auto)
-        return df
+        return df[1, keycol]
     end
 end
 
+
+
+"""
+    get_variable_id(db::SQLite.DB, domain, name)
+
+Returns the `variable_id` of variable named `name` in domain with id `domain`
+"""
+function get_variable_id(db::SQLite.DB, domain, name)
+    stmt = prepareselectstatement(db, "variables", ["variable_id"], ["domain_id", "name"])
+    result = DBInterface.execute(stmt, [domain, name]) |> DataFrame
+    if nrow(result) == 0
+        return missing
+    else
+        return result[1, :variable_id]
+    end
+end
+
+
+"""
+    get_variable_id(db::DBInterface.Connection, domain, name)
+
+    Returns the `variable_id` of variable named `name` in domain with id `domain`
+"""
+function get_variable_id(db::ODBC.Connection, domain, name)
+    stmt = prepareselectstatement(db, "variables", ["variable_id"], ["domain_id", "name"])
+    result = DBInterface.execute(stmt, [domain, name]; iterate_rows=true) |> DataFrame
+    if nrow(result) == 0
+        return missing
+    else
+        return result[1, :variable_id]
+    end
+end
+
+
+"""
+    get_variable(db::SQLite.DB, variable_id::Integer)
+
+Returns the entry of variable with `variable_id`
+"""
+function get_variable(db::SQLite.DB, variable_id::Integer)
+    stmt = prepareselectstatement(db, "variables", ["*"], ["variable_id"])
+    result = DBInterface.execute(stmt, [variable_id]) |> DataFrame
+    if nrow(result) == 0
+        return missing
+    else
+        return result
+    end
+end
+
+
+"""
+    rbind(dfs::Vector{DataFrame})
+
+    Row binding dataframes. If a column is missing in a dataframe, fill with missing value.
+"""
+
+function rbind(dfs::Vector{DataFrame})
+    all_columns = union([names(df) for df in dfs]...)
+    for df in dfs
+        for col in setdiff(all_columns, names(df))
+            df[!, col] = Vector{Union{Missing, Int}}(missing, nrow(df))
+        end
+    end
+    ouptut = vcat(dfs...)
+    return output
+end
+
+
+"""
+    lines(str)
+
+Returns an array of lines in `str` 
+"""
+lines(str) = split(str, '\n')
+
+
+"""
+Export dataset 
+"""
 
 """
     dataset_to_dataframe(db::SQLite.DB, dataset)::AbstractDataFrame
@@ -1175,6 +1599,28 @@ function dataset_to_dataframe(db::SQLite.DB, dataset)::AbstractDataFrame
     long = DBInterface.execute(stmt, (dataset = dataset)) |> DataFrame
     return unstack(long, :row_id, :variable, :value)
 end
+
+"""
+    dataset_to_dataframe(db::ODBC.Connection, dataset)::AbstractDataFrame
+
+Extract a dataset into a DataFrame
+"""
+function dataset_to_dataframe(db::ODBC.Connection, dataset)::AbstractDataFrame
+    variables = dataset_variables(db, dataset)
+    df = DataFrame()
+    col1 = true
+    for variable in eachrow(variables)
+       if col1
+           df = dataset_column(db, dataset, variable.variable_id, variable.variable)
+           col1 = false
+       else
+           df = outerjoin(df, dataset_column(db, dataset, variable.variable_id, variable.variable), on=:row_id)
+       end 
+    end
+    return df
+end
+
+
 """
     dataset_variables(db::SQLite.DB, dataset)::AbstractDataFrame
 
@@ -1211,6 +1657,42 @@ function dataset_variables(db::ODBC.Connection, dataset)::AbstractDataFrame
     stmt = DBInterface.prepare(db, sql)
     return DBInterface.execute(stmt, [dataset]; iterate_rows=true) |> DataFrame
 end
+
+
+"""
+    dataset_to_arrow(db, dataset, datapath)
+
+Save a dataset in the arrow format
+"""
+function dataset_to_arrow(db, dataset, datapath)
+    outputdir = joinpath(datapath, "arrowfiles")
+    if !isdir(outputdir)
+        mkpath(outputdir)
+    end
+    df = dataset_to_dataframe(db, dataset)
+    Arrow.write(joinpath(outputdir, "$(get_datasetname(db,dataset)).arrow"), df, compress=:zstd)
+end
+
+
+"""
+    dataset_to_csv(db, dataset_id, datapath, compress)
+
+Save a dataset in compressed csv format
+"""
+function dataset_to_csv(db, dataset_id, datapath, compress=false)
+    outputdir = joinpath(datapath, "csvfiles")
+    if !isdir(outputdir)
+        mkpath(outputdir)
+    end
+    df = dataset_to_dataframe(db, dataset_id)
+    if (compress)
+        CSV.write(joinpath(outputdir, "$(get_datasetname(db,dataset_id)).gz"), df, compress=true) #have trouble opening on MacOS
+    else
+        CSV.write(joinpath(outputdir, "$(get_datasetname(db,dataset_id)).csv"), df)
+    end
+end
+
+
 """
     dataset_column(db::SQLite.DB, dataset_id::Integer, variable_id::Integer, variable_name::String)::AbstractDataFrame
 
@@ -1229,6 +1711,28 @@ function dataset_column(db::SQLite.DB, dataset_id::Integer, variable_id::Integer
     stmt = DBInterface.prepare(db, sql)
     return DBInterface.execute(stmt, (dataset_id = dataset_id, variable_id=variable_id)) |> DataFrame
 end
+
+"""
+    dataset_column(db::ODBC.Connection, dataset_id::Integer, variable_id::Integer, variable_name::String)::AbstractDataFrame
+
+Return one column of data in a dataset (representing a variable)
+"""
+function dataset_column(db::ODBC.Connection, dataset_id::Integer, variable_id::Integer, variable_name::String)::AbstractDataFrame
+    value_column = get_valuetype(db, variable_id)
+    sql = """
+    SELECT
+        d.row_id,
+        $value_column as $variable_name
+    FROM data d
+      JOIN datarows r ON d.row_id = r.row_id
+    WHERE r.dataset_id = ?
+      AND d.variable_id = ?;
+    """
+    stmt = DBInterface.prepare(db, sql)
+    return DBInterface.execute(stmt, [dataset_id, variable_id]; iterate_rows=true) |> DataFrame
+end
+
+
 """
     get_valuetype(db::ODBC.Connection, variable_id::Integer)
 
@@ -1261,78 +1765,9 @@ function get_valuetype(db::ODBC.Connection, variable_id::Integer)
         error("Variable $variable_id not found.")
     end
 end
-"""
-    dataset_column(db::ODBC.Connection, dataset_id::Integer, variable_id::Integer, variable_name::String)::AbstractDataFrame
-
-Return one column of data in a dataset (representing a variable)
-"""
-function dataset_column(db::ODBC.Connection, dataset_id::Integer, variable_id::Integer, variable_name::String)::AbstractDataFrame
-    value_column = get_valuetype(db, variable_id)
-    sql = """
-    SELECT
-        d.row_id,
-        $value_column as $variable_name
-    FROM data d
-      JOIN datarows r ON d.row_id = r.row_id
-    WHERE r.dataset_id = ?
-      AND d.variable_id = ?;
-    """
-    stmt = DBInterface.prepare(db, sql)
-    return DBInterface.execute(stmt, [dataset_id, variable_id]; iterate_rows=true) |> DataFrame
-end
-"""
-    dataset_to_dataframe(db::ODBC.Connection, dataset)::AbstractDataFrame
-
-Extract a dataset into a DataFrame
-"""
-function dataset_to_dataframe(db::ODBC.Connection, dataset)::AbstractDataFrame
-    variables = dataset_variables(db, dataset)
-    df = DataFrame()
-    col1 = true
-    for variable in eachrow(variables)
-       if col1
-           df = dataset_column(db, dataset, variable.variable_id, variable.variable)
-           col1 = false
-       else
-           df = outerjoin(df, dataset_column(db, dataset, variable.variable_id, variable.variable), on=:row_id)
-       end 
-    end
-    return df
-end
-"""
-    dataset_to_arrow(db, dataset, datapath)
-
-Save a dataset in the arrow format
-"""
-function dataset_to_arrow(db, dataset, datapath)
-    outputdir = joinpath(datapath, "arrowfiles")
-    if !isdir(outputdir)
-        mkpath(outputdir)
-    end
-    df = dataset_to_dataframe(db, dataset)
-    Arrow.write(joinpath(outputdir, "$(get_datasetname(db,dataset)).arrow"), df, compress=:zstd)
-end
 
 """
-    dataset_to_csv(db, dataset_id, datapath, compress)
-
-Save a dataset in compressed csv format
-"""
-function dataset_to_csv(db, dataset_id, datapath, compress=false)
-    outputdir = joinpath(datapath, "csvfiles")
-    if !isdir(outputdir)
-        mkpath(outputdir)
-    end
-    df = dataset_to_dataframe(db, dataset_id)
-    if (compress)
-        CSV.write(joinpath(outputdir, "$(get_datasetname(db,dataset_id)).gz"), df, compress=true) #have trouble opening on MacOS
-    else
-        CSV.write(joinpath(outputdir, "$(get_datasetname(db,dataset_id)).csv"), df)
-    end
-end
-
-"""
-    get_datasetname(db, dataset)
+    get_datasetname(db::SQLite.DB, dataset)
 
 Return dataset name, given the `dataset_id`
 """
@@ -1371,90 +1806,6 @@ function get_datasetname(db::ODBC.Connection, dataset)
     else
         return df[1, :name]
     end
-end
-
-"""
-    lines(str)
-
-Returns an array of lines in `str` 
-"""
-lines(str) = split(str, '\n')
-
-
-"""
-    get_last_deathingest(source)
-
-Get ingestion id for latest death ingestion for source
-"""
-function get_last_deathingest(db::SQLite.DB, source_id::Integer)
-    sql = """
-    SELECT 
-        di.data_ingestion_id
-    FROM data_ingestions di
-    JOIN deaths d ON di.data_ingestion_id = d.data_ingestion_id
-    WHERE source_id = @source_id
-    ORDER BY di.date_received DESC
-    LIMIT 1;
-    """
-    death_ingests = DBInterface.execute(db, sql, (source_id = source_id)) |> DataFrame
-    if nrow(death_ingests) > 0
-        return death_ingests[1, :data_ingestion_id]
-    else
-        error("Death from source $source_id hasn't been ingested.")
-    end
-end
-"""
-    get_last_deathingest(db::ODBC.Connection, source_id::Integer)
-
-Get ingestion id for latest death ingestion for source
-"""
-function get_last_deathingest(db::ODBC.Connection, source_id::Integer)
-    sql = """
-    SELECT TOP 1
-        di.data_ingestion_id
-    FROM data_ingestions di
-    JOIN deaths d ON di.data_ingestion_id = d.data_ingestion_id
-    WHERE source_id = ?
-    ORDER BY di.date_received DESC;
-    """
-    death_ingests = DBInterface.execute(db, sql, [source_id]) |> DataFrame
-    if nrow(death_ingests) > 0
-        return death_ingests[1, :data_ingestion_id]
-    else
-        error("Death from source $source_id hasn't been ingested.")
-    end
-end
-
-"""
-    add_datarows(db::SQLite.DB, nrow::Integer, dataset_id::Integer)
-
-    Define data rows in the datarows table
-"""
-function add_datarows(db::DBInterface.Connection, nrow::Integer, dataset_id::Integer)
-    stmt = prepareinsertstatement(db, "datarows", ["dataset_id"])
-    #Create a row_id for every row in the dataset
-    for i = 1:nrow
-        DBInterface.execute(stmt, [dataset_id])
-    end
-    return selectdataframe(db, "datarows", ["row_id"], ["dataset_id"], [dataset_id]) |> DataFrame
-end
-
-
-"""
-    rbind(dfs::Vector{DataFrame})
-
-    Row binding dataframes. If a column is missing in a dataframe, fill with missing value.
-"""
-
-function rbind(dfs::Vector{DataFrame})
-    all_columns = union([names(df) for df in dfs]...)
-    for df in dfs
-        for col in setdiff(all_columns, names(df))
-            df[!, col] = Vector{Union{Missing, Int}}(missing, nrow(df))
-        end
-    end
-    ouptut = vcat(dfs...)
-    return output
 end
 
 include("constants.jl")

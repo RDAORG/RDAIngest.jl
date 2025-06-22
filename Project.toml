@@ -1,6 +1,6 @@
 name = "RDAIngest"
 uuid = "aba026a6-e005-4398-bcdf-85be4f49656a"
-authors = ["Kobus Herbst<kobus.herbst@ahri.org>"]
+authors = ["Kobus Herbst<kobus.herbst@ahri.org>", "Yue Chu<ychu612@gmail.com>"]
 version = "0.1.0-DEV"
 
 [deps]
@@ -18,9 +18,13 @@ Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 DocumenterTools = "35a29f4d-8980-5a13-9543-d66fff28ecb8"
 Docx = "cae6eaf6-1b4f-40a4-a2e0-a9a4c95b4cc3"
+FFMPEG = "c87230d0-a227-11e9-1b43-d7ebe4e7570a"
+FFMPEG_jll = "b22a6f82-2f65-5046-a5b2-351ab43fb4e5"
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
+FilePathsBase = "48062228-2e41-5def-b9a4-89aafe57970f"
 InlineStrings = "842dd82b-1e85-43dc-bf29-5d0ee9dffc48"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 LiveServer = "16fef848-5104-11e9-1b77-fb7a48bbb589"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 ODBC = "be6f12e9-ca4f-5eb2-a339-a4f995cc0291"
