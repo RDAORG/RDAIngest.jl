@@ -151,5 +151,27 @@ An instance of data ingestion into the Reference Death Archive is detailed throu
 | transformation_outputs  | The dataset/s produced by the transformation                                  |
 
 
+### user_submissions
+The RDA also stores metadata from requests for new data sets created by users in the user_submissions table.  This table is not included in the conceptual model.  The corresponding fields are listed in the following table.
+
+
+| Table Name              | Description                                                                   |
+|:----------------------- | :---------------------------------------------------------------------------- |
+| user_name               | Name of user submitting the request                                           |
+| user_email              | Email for contacting user about request                                       |
+| project_name            | Name of project in submitted request                                          |
+| project_version         | Current version of the project                                                |
+| submission_date         | Date the user submitted the request                                           |
+| git_hash                | Hash associated with the git repository used to track submitted request       |
+| json_submission         | Metadata from submission (as a blob/binary object)                            |
+| submission_files        | Names of files included with the submission (e.g. code, data dictionaries)    |
+| review_status           | Status of the review (e.g., new, revised submission, needs revision)          |
+| reviewer                | Name of reviewer currently managing the user request                          |
+| reviewer_comments       | Comments on the user request (e.g., necessary revisions for publication)      |
+| last_updated            | Date when this entry as last modified                                         |
+
+
+
+
 ## Conclusion
 In conclusion, this documentation serves as an essential reference for understanding the Reference Death Archive (RDA). It provides a clear overview of the system's structure, including data sources, collection protocols, instruments, datasets, variables, mappings, and transformations. With this foundational knowledge, users and developers can efficiently navigate and utilize the RDA for diverse research and analytical purposes, ensuring its continued effectiveness as a valuable data management platform.

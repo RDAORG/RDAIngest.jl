@@ -20,6 +20,7 @@ function createdatabase(path, name; replace=false, sqlite=true)
         createinstruments(db)
         createdeaths(db)
         createmapping(db)
+        createusersubmissions(db)
         return nothing
     finally
         DBInterface.close!(db)
@@ -1451,6 +1452,63 @@ function createmapping(db::ODBC.Connection)
             CONSTRAINT [fk_variablemappings_destination_id] FOREIGN KEY ([destination_id]) REFERENCES [variables]([variable_id]),
             CONSTRAINT [fk_variablemappings_from_id] FOREIGN KEY ([from_id]) REFERENCES [variables]([variable_id]),
             CONSTRAINT [fk_variablemappings_prerequisite_id] FOREIGN KEY ([prerequisite_id]) REFERENCES [variables]([variable_id])
+        );
+    END
+    """
+    DBInterface.execute(db, sql)
+    return nothing
+end
+
+"""
+    createusersubmissions(db::SQLite.DB)
+
+Create the table required for user submissions requesting a data set be published on NADA.
+
+"""
+function createusersubmissions(db::SQLite.DB)
+    sql = raw"""
+        CREATE TABLE IF NOT EXISTS "user_submissions" (
+            "user_name" TEXT NOT NULL,
+            "user_email"  TEXT NOT NULL,
+            "project_name"  TEXT NOT NULL,
+            "project_version" TEXT NOT NULL,
+            "submission_date" DATE NOT NULL,
+            "git_hash"  TEXT NOT NULL,
+            "json_submission" BLOB NOT NULL,
+            "submission_files" TEXT NOT NULL,
+            "review_status"  TEXT NOT NULL,
+            "reviewer"  TEXT NOT NULL,
+            "reviewer_comments" TEXT NOT NULL,
+            "last_updated" DATE NOT NULL
+        );
+    """
+    DBInterface.execute(db, sql)
+    return nothing
+end
+
+"""
+    createusersubmissions(db::ODBC.Connection)
+
+Create the table required for user submissions requesting a data set be published on NADA.
+
+"""
+function createusersubmissions(db::ODBC.Connection)
+    sql = raw"""
+    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'user_submissions')
+    BEGIN
+        CREATE TABLE [user_submissions] (
+            [user_name] NVARCHAR(255) NOT NULL,
+            [user_email] NVARCHAR(255) NOT NULL,
+            [project_name] NVARCHAR(255) NOT NULL,
+            [project_version] NVARCHAR(255) NOT NULL,
+            [submission_date] DATE NOT NULL,
+            [git_hash] NVARCHAR(255) NOT NULL,
+            [json_submission] VARBINARY(MAX) NOT NULL,
+            [submission_files] NVARCHAR(255) NOT NULL,
+            [review_status] NVARCHAR(255) NOT NULL,
+            [reviewer] NVARCHAR(255) NOT NULL,
+            [reviewer_commments] NVARCHAR(4000) NOT NULL,
+            [last_updated] DATE NOT NULL
         );
     END
     """

@@ -93,3 +93,22 @@ The format of the file is (the field separator is a semi-colon):
     * `RDA_TYPE_DATETIME` = 5
     * `RDA_TYPE_TIME` = 6
     * `RDA_TYPE_CATEGORY` = 7
+
+### user_submissions
+The RDA also stores metadata from requests for new data sets created by users in the user_submissions table.  This table is not included in the conceptual model.  The corresponding fields are listed in the following table.
+
+
+| Table Name              | Description                                                                   |
+|:----------------------- | :---------------------------------------------------------------------------- |
+| user_name               | Name of user submitting the request                                           |
+| user_email              | Email for contacting user about request                                       |
+| project_name            | Name of project in submitted request                                          |
+| project_version         | Current version of the project                                                |
+| submission_date         | Date the user submitted the request                                           |
+| git_hash                | Hash associated with the git repository used to track submitted request       |
+| json_submission         | Metadata from submission (as a blob/binary object)                            |
+| submission_files        | Names of files included with the submission (e.g. code, data dictionaries)    |
+| review_status           | Status of the review (e.g., new, revised submission, needs revision)          |
+| reviewer                | Name of reviewer currently managing the user request                          |
+| reviewer_comments       | Comments on the user request (e.g., necessary revisions for publication)      |
+| last_updated            | Date when this entry as last modified                                         |
