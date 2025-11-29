@@ -1,7 +1,7 @@
 """
     createdatabase(path, name; replace=false, sqlite=true)
 
-Creates a database to store the information contained in the Reference Death Archive (RDA)
+Creates a database to store the information contained in the Reference Data Archive (RDA)
 By default a sqlite database is created, but this can be changed by setting the sqlite argument to false, 
 in which case a sql server database is created and path is interpreted as the name of the database server.
 """
@@ -25,6 +25,7 @@ function createdatabase(path, name; replace=false, sqlite=true)
         DBInterface.close!(db)
     end
 end
+
 """
     createdatabasesqlite(path, name; replace=replace)::SQLite.DB
 
@@ -45,6 +46,7 @@ function createdatabasesqlite(path, name; replace=replace)::SQLite.DB
     end
     return SQLite.DB(file)
 end
+
 """
     createdatabasesqlserver(server, name; replace=replace)::ODBC.Connection
 
@@ -71,6 +73,7 @@ function createdatabasesqlserver(server, name; replace=replace)::ODBC.Connection
     DBInterface.close!(master)
     return ODBC.Connection("Driver=ODBC Driver 17 for SQL Server;Server=$server;Database=$name;Trusted_Connection=yes;")
 end
+
 """
     opendatabase(path::String, name::String; sqlite = true)::DBInterface.Connection
 
@@ -84,6 +87,7 @@ function opendatabase(path::String, name::String; sqlite=true)::DBInterface.Conn
         return opensqlserverdatabase(path, name)
     end
 end
+
 """
     opensqlitedatabase(path::String, name::String)::DBInterface.Connection
 
@@ -97,6 +101,7 @@ function opensqlitedatabase(path::String, name::String)::DBInterface.Connection
         error("File '$file' not found.")
     end
 end
+
 """
     opensqlserverdatabase(server::String, name::String)::DBInterface.Connection
 
@@ -105,6 +110,7 @@ Open database 'name' on server 'server' (assume SQL Server database)
 function opensqlserverdatabase(server::String, name::String)::DBInterface.Connection
     return ODBC.Connection("Driver=ODBC Driver 17 for SQL Server;Server=$server;Database=$name;Trusted_Connection=yes;")
 end
+
 """
     get_table(db::SQLite.DB, table::String)::AbstractDataFrame
 
@@ -115,6 +121,7 @@ function get_table(db::SQLite.DB, table::String)::AbstractDataFrame
     df = DBInterface.execute(db, sql) |> DataFrame
     return df
 end
+
 """
     get_table(db::ODBC.Connection, table::String)::AbstractDataFrame
 
@@ -125,6 +132,7 @@ function get_table(db::ODBC.Connection, table::String)::AbstractDataFrame
     df = DBInterface.execute(db, sql, iterate_rows=true) |> DataFrame
     return df
 end
+
 """
     makeparam(s)
 
@@ -153,6 +161,7 @@ function savedataframe(con::ODBC.Connection, df::AbstractDataFrame, table)
         DBInterface.execute(stmt, Vector(row))
     end
 end
+
 """
     savedataframe(con::SQLite.DB, df::AbstractDataFrame, table)
 
@@ -167,6 +176,7 @@ function savedataframe(con::SQLite.DB, df::AbstractDataFrame, table)
         DBInterface.execute(stmt, NamedTuple(row))
     end
 end
+
 """
     prepareinsertstatement(db::SQLite.DB, table, columns)
 
@@ -177,6 +187,7 @@ function prepareinsertstatement(db::SQLite.DB, table, columns)
     sql = "INSERT INTO $table ($(join(columns, ", "))) VALUES ($(join(paramnames, ", ")));"
     return DBInterface.prepare(db, sql)
 end
+
 """
     prepareinsertstatement(db::ODBC.Connection, table, columns)
 
@@ -220,6 +231,7 @@ function insertwithidentity(db::ODBC.Connection, table, columns, values, keycol)
     df = DBInterface.execute(stmt, values; iterate_rows=true) |> DataFrame
     return df[1, :last_id]
 end
+
 """
     insertwithidentity(db::SQLite.DB, table, columns, values, keycol)
 
@@ -384,15 +396,6 @@ function createsources(db::SQLite.DB)
     return nothing
 end
 
-"""
-    initstudytypes()
-
-Default transformation types
-"""
-initstudytypes() = DataFrame([(study_type_id=RDA_STUDY_TYPE_DSS, name="Demographic Surveillance"),
-    (study_type_id=RDA_STUDY_TYPE_COHORT, name="Cohort study"),
-    (study_type_id=RDA_STUDY_TYPE_SURVEY, name="Cross-sectional survey"),
-    (study_type_id=RDA_STUDY_TYPE_PANEL, name="Panel data")])
 
 """
     createsources(db::ODBC.Connection)
@@ -649,20 +652,6 @@ function createtransformations(db::SQLite.DB)
     savedataframe(db, statuses, "transformation_statuses")
     return nothing
 end
-"""
-    inittypes()
-
-Default transformation types
-"""
-inittypes() = DataFrame([(transformation_type_id=RDA_TRANSFORMATION_TYPE_INGEST, name="Raw data ingest"),
-    (transformation_type_id=RDA_TRANSFORMATION_TYPE_TRANSFORM, name="Dataset transform")])
-"""
-    initstatuses()
-
-Default transformation statuses
-"""
-initstatuses() = DataFrame([(transformation_status_id=RDA_TRANSFORMATION_STATUS_UNVERIFIED, name="Unverified"),
-    (transformation_status_id=RDA_TRANSFORMATION_STATUS_VERIFIED, name="Verified")])
 
 """
     createtransformations(db::ODBC.Connection)
@@ -911,24 +900,25 @@ function createvariables(db::ODBC.Connection)
     identityinsertoff(db, "value_types")
     return nothing
 end
-"""
-    initvalue_types()
 
-Add default value types
 """
-initvalue_types() = DataFrame([(value_type_id=RDA_TYPE_INTEGER, value_type="Integer", description=""),
-    (value_type_id=RDA_TYPE_FLOAT, value_type="Float", description=""),
-    (value_type_id=RDA_TYPE_STRING, value_type="String", description=""),
-    (value_type_id=RDA_TYPE_DATE, value_type="Date", description="ISO Date yyyy-mm-dd"),
-    (value_type_id=RDA_TYPE_DATETIME, value_type="Datetime", description="ISO Datetime yyyy-mm-ddTHH:mm:ss.sss"),
-    (value_type_id=RDA_TYPE_TIME, value_type="Time", description="ISO Time HH:mm:ss.sss"),
-    (value_type_id=RDA_TYPE_CATEGORY, value_type="Categorical", description="Category represented by a Vocabulary with integer value and string code, stored as Integer")
-])
+    identityinserton(db::ODBC.Connection, table::String)
+
+Enable identity insert
+"""
+
 function identityinserton(db::ODBC.Connection, table::String)
     sql = "SET IDENTITY_INSERT [$table] ON"
     DBInterface.execute(db, sql)
     return nothing
 end
+
+"""
+    identityinsertoff(db::ODBC.Connection, table::String)
+
+Disable identity insert
+"""
+
 function identityinsertoff(db::ODBC.Connection, table::String)
     sql = "SET IDENTITY_INSERT [$table] OFF"
     DBInterface.execute(db, sql)
@@ -949,6 +939,7 @@ function updatevariable_vocabulary(db::DBInterface.Connection, name, domain_id, 
     """
     DBInterface.execute(db, sql)
 end
+
 """
     createdatasets(db::SQLite.DB)
 
@@ -972,10 +963,11 @@ function createdatasets(db::SQLite.DB)
 
     sql = raw"""
     CREATE TABLE "repository" (
-    "repository_id" TEXT NOT NULL PRIMARY KEY,
+    "repository_id" TEXT NOT NULL,
     "repository_ddi_id" TEXT,
     "repository_ddi" BLOB,
     "repository_rdf" BLOB,
+    PRIMARY KEY ("repository_id", "repository_ddi_id"),
     CONSTRAINT "fk_repository_dataset_id" FOREIGN KEY ("repository_id") REFERENCES "datasets" ("repository_id") ON DELETE CASCADE ON UPDATE NO ACTION
     );
     """
@@ -1056,13 +1048,6 @@ function createdatasets(db::SQLite.DB)
     return nothing
 end
 
-"""
-    initunitanalysis()
-
-Default unit of analysis
-"""
-initunitanalysis() = DataFrame([(unit_of_analysis_id=RDA_UNIT_OF_ANALYSIS_INDIVIDUAL, name="Individual"),
-    (unit_of_analysis_id=RDA_UNIT_OF_ANALYSIS_AGGREGATION, name="Aggregation")])
 
 """
     createdatasets(db::ODBC.Connection)
