@@ -17,29 +17,44 @@ using Base64
 using JSON3
 
 export
-    Vocabulary, VocabularyItem,
+    Vocabulary, VocabularyItem, 
     DataDocument, DocCSV, DocXLSX, DocPDF, read_data, 
-    AbstractSource, rawSource, CHAMPSSource, COMSAMZSource, HEALSLSource, #Source structs
-    AbstractIngest, sourceIngest, CHAMPSIngest, COMSAMZIngest, HEALSLIngest, userIngest, #Ingest structs
+    AbstractSource, rawSource, #Source structs
+    AbstractIngest, sourceIngest, userIngest, #Ingest structs
 
     ingest_source, 
-    add_sites, add_instruments, add_protocols, add_ethics, add_source, add_domain, 
-    ingest_dictionary, ingest_deaths, ingest_data, save_dataset, 
+    add_sites, add_instruments, add_protocols, add_ethics, 
+    add_source, add_domain, get_source, get_domain, 
+    ingest_dictionary, ingest_deaths, ingest_data, save_dataset, ingest_product, 
     read_variables, get_vocabulary, add_variables, add_vocabulary, lookup_variables, 
     add_datarows, add_data_column, 
     
     death_in_ingest, get_last_deathingest, link_instruments, link_deathrows, 
-    get_namedkey, get_variable_id, get_variable, get_valuetype, get_datasetname, 
+    get_namedkey, get_variable_id, get_variable, get_valuetype, get_datasetname, get_idcol,
 
-    updatevalue, rbind, insertdata, insertwithidentity, 
+    updatevalue, rbind, insertdata, insertwithidentity, read_blob,
     get_table, selectdataframe, prepareselectstatement, selectsourcesites, 
 
     dataset_to_dataframe, dataset_to_arrow, dataset_to_csv, 
     dataset_variables, dataset_column,
     
-    savedataframe, createdatabase, opendatabase
+    savedataframe, createdatabase, opendatabase,
+
+    nadaMeta, updateMeta, iso3_mapping
 
 #ODBC.bindtypes(x::Vector{UInt8}) = ODBC.API.SQL_C_BINARY, ODBC.API.SQL_LONGVARBINARY
+
+"""
+Preload country codes
+"""
+
+ISO3_PATH = joinpath(@__DIR__, "countrycode_iso3166.csv") |> normpath # file for ISO3 mapping
+if isfile(ISO3_PATH)
+    const iso3_mapping = CSV.File(ISO3_PATH) |> DataFrame
+else
+    @warn "Country ISO3 codes not found at $(ISO3_PATH); using empty DataFrame"
+    const iso3_mapping = DataFrame(country = String[], iso2 = String[], iso3 = String[], country_code = String[])
+end
 
 """
 Structs for vocabulary
@@ -47,7 +62,7 @@ Structs for vocabulary
 
 struct VocabularyItem
     value::Int64
-    code::String
+    code::Union{String, Integer, AbstractFloat} #String
     description::Union{String,Missing}
 end
 
@@ -84,7 +99,7 @@ struct DocPDF <: DataDocument #Can take either .pdf or .docx
 end
 
 """
-Struct for source-related information
+Struct for source level meta files (protocols, ethics, instruments, sites/countries)
 """
 abstract type AbstractSource end
 
@@ -96,71 +111,27 @@ Base.@kwdef mutable struct rawSource <: AbstractSource
     # Study type
     study_type_id::Integer = 1
 
-    # Sites
-    datafolder::String = "De_identified_data"
-    site_data::String = "CHAMPS_deid_basic_demographics.csv"
-    site_col::String = "site_iso_code"
-    country_col::String = "name of country name column"
-    country_name::String = "single country name" # if country col is empty, specify country name
-    #add_iso3::Bool = false # add iso3 automatically
-
     # Protocol - specify file extension in name
     protocolfolder::String = "Protocols"
-    protocols::Dict{String,String} = Dict("protocol_file_name.pdf" => "Protocol name")
+    protocols::Dict{String,String} = Dict("protocol_file.pdf" => "XX Study Protocol")
 
     # Instrument - specify file extension in name
     instrumentfolder::String = "Instruments"
-    instruments::Dict{String,String} = Dict("questionnaire_file_name.pdf" => "Dataset name.extension")
+    instruments::Dict{String,Vector{String}} = Dict("questionnaire_file.pdf" => ["WHO 2022 VA questionnaire - adult",
+                                                                                 "protocol_file.pdf"])
 
     # Ethics - specify file extension in name
     ethicsfolder::String = "Ethics"
-    ethics::Dict{String,Vector{String}} = Dict("ethics_file_name.pdf" => ["Ethics name","IRB committee","protocol_file_name.pdf"])
-
-    # CSV format
-    delim::Char = ','
-    quotechar::Char = '"'
-    dateformat::String = "yyyy-mm-dd"
-    decimal::Char = '.'
-    
-end
-
-"""
-Provide CHAMPS specific source information
-"""
-
-Base.@kwdef mutable struct CHAMPSSource <: AbstractSource 
-
-    # Domain info
-    name::String = "CHAMPS"
-
-    # Study type
-    study_type_id::Integer = 1
+    ethics::Dict{String,Vector{String}} = Dict("ethics_file.pdf" => ["Ethics document - adult consent form",
+                                                                     "XX University IRB",
+                                                                     "protocol_file.pdf"])
 
     # Sites
     datafolder::String = "De_identified_data"
-    site_data::String = "CHAMPS_deid_basic_demographics.csv"
-    site_col::String = "site_iso_code"
-    country_col::String = "site_iso_code"
-    country_name::String = "single country name" # if country col is empty, specify country name
-    #add_iso3::Bool = false # add iso3 automatically
-
-    # Protocol - specify file extension in name
-    protocolfolder::String = "Protocols"
-    protocols::Dict{String,String} = Dict("CHAMPS-Mortality-Surveillance-Protocol-v1.3.pdf" => "CHAMPS Mortality Surveillance Protocol",
-    "CHAMPS-Social-Behavioral-Science-Protocol-v1.0.pdf" => "CHAMPS Social Behavioral Science Protocol",
-    "CHAMPS-Diagnosis-Standards.pdf" => "CHAMPS DeCoDe Diagnosis Standards" ,
-    "CHAMPS-Manual-v3.pdf" => "CHAMPS Manual",
-    "CHAMPS Online De-Identified DTA.pdf" => "CHAMPS Online De-Identified Data Transfer Agreement")
-
-    # Instrument - specify file extension in name
-    instrumentfolder::String = "Instruments"
-    instruments::Dict{String,String} = Dict("cdc_93759_DS9.pdf" => "CHAMPS_deid_verbal_autopsy.csv")
-
-    # Ethics - specify file extension in name
-    ethicsfolder::String = "Ethics"
-    ethics::Dict{String,Vector{String}} = Dict("ICF-04 CHAMPS VA v1.1.pdf" => ["ICF-04 CHAMPS VA v1.1","Local ethics institution", "CHAMPS-Mortality-Surveillance-Protocol-v1.3.pdf"],
-    "ICF-03_CHAMPS non_MITS consent v1.3.pdf" => ["ICF-03_CHAMPS non_MITS consent v1.3","Local ethics institution", "CHAMPS-Mortality-Surveillance-Protocol-v1.3.pdf"],
-    "ICF-01 CHAMPS MITS procedures v1.3.pdf" => ["ICF-01 CHAMPS MITS procedures v1.3","Local ethics institution", "CHAMPS-Mortality-Surveillance-Protocol-v1.3.pdf"])
+    site_data::String = "data.csv"
+    site_col::String = "site_name"
+    country_col::String = "" #column for country if available, e.g. "country_name"
+    country_name::String = "Brazil" # if column name is not applicable, specify country name as string
 
     # CSV format
     delim::Char = ','
@@ -168,99 +139,6 @@ Base.@kwdef mutable struct CHAMPSSource <: AbstractSource
     dateformat::String = "yyyy-mm-dd"
     decimal::Char = '.'
 
-end
-
-
-"""
-Provide COMSA Mozambique specific information
-"""
-
-Base.@kwdef mutable struct COMSAMZSource <: AbstractSource 
-
-    # Domain info
-    name::String = "COMSAMZ"
-
-    # Study type
-    study_type_id::Integer = 1
-
-    # Sites
-    datafolder::String = "De_identified_data"
-    site_data::String = "Comsa_WHO_VA_20230308.csv"
-    site_col::String = "provincia"
-    country_name::String = "Mozambique" 
-
-    # Protocol - specify file extension in name
-    protocolfolder::String = "Protocols"
-    protocols::Dict{String,String} = Dict("COMSA-FR-protocol_version-1.0_05July2017.pdf" => "Countrywide Mortality Surveillance for Action (COMSA) Mozambique (Formative Research)",
-    "COMSA-protocol_without-FR_version-1.1_15June2017_clean_REVISED.pdf" => "Countrywide Mortality Surveillance for Action (COMSA) Mozambique",
-    "COMSA-Data-Access-Plan.pdf" => "COMSA Data Access Plan",
-    "Data Use Agreement (DUA) - Comsa.pdf" => "COMSA Data Use Agreement")
-
-    # Instrument - specify file extension in name
-    instrumentfolder::String = "Instruments"
-    instruments::Dict{String,String} = Dict("5a_2018_COMSA_VASA_ADULTS-EnglishOnly_01262019_clean.pdf" => "Comsa_WHO_VA_20230308.csv",
-    "5a_2018_COMSA_VASA_CHILD-EnglishOnly_12152018Clean.pdf" => "Comsa_WHO_VA_20230308.csv",
-    "5a_2018_COMSA_VASA_SB_NN-EnglishOnly_12152018Clean.pdf" => "Comsa_WHO_VA_20230308.csv",
-    "5a_2018_COMSA_VASA-GenInfo_English_06272018_clean.pdf" => "Comsa_WHO_VA_20230308.csv" #,
-    # "3.Death_2-23.pdf" => "Comsa_death_20230308.csv",
-    # "2.Preg-outcome_2-23.pdf" => "Comsa_pregnancy_outcome_20230308.csv",
-    # "1.Pregnancy.pdf" => "Comsa_pregnancy_20230308.csv",
-    # "Household-members_2-23.pdf" => "Comsa_household_20230308.csv"
-    )
-
-    # Ethics - specify file extension in name
-    ethicsfolder::String = "Ethics"
-    ethics::Dict{String,Vector{String}} = Dict("adult vasa - version 1, 2020 07 15.docx" => ["adult vasa - version 1", "National Health Bioethics Committee of Mozambique", "COMSA-protocol_without-FR_version-1.1_15June2017_clean_REVISED.pdf"],
-    "child assent vasa - version 1, 2020 07 15.docx" => ["child assent vasa - version 1", "National Health Bioethics Committee of Mozambique", "COMSA-protocol_without-FR_version-1.1_15June2017_clean_REVISED.pdf"])
-
-    # CSV format
-    delim::Char = ','
-    quotechar::Char = '"'
-    dateformat::String = "u dd, yyyy" 
-    decimal::Char = '.'
-
-end
-
-"""
-Provide COMSA Sierra Leone (HEALSL) specific information
-"""
-
-Base.@kwdef mutable struct HEALSLSource <: AbstractSource 
-
-    # Domain info
-    name::String = "HEALSL"
-
-    # Study type
-    study_type_id::Integer = 1
-
-    # Sites
-    datafolder::String = "De_identified_data"
-    site_data::String = "healsl_all_v1.csv"
-    site_col::String = "id10057"
-    country_name::String = "Sierra Leone"
-
-    # Protocol - specify file extension in name
-    protocolfolder::String = "Protocols"
-    protocols::Dict{String,String} = Dict("4_COMSA Protocol - 27-Feb-2022.pdf" => "HEAL-SL (COMSA Sierra Leone) Protocol",
-    "HEAL-SL Research Data Processing Notes for Extenal.pdf" => "HEAL-SL Data Processing Notes")
-
-    # Instrument - specify file extension in name
-    instrumentfolder::String = "Instruments"
-    instruments::Dict{String,String} = Dict("Adult_eVA_Questionnaire-SL.pdf" => "healsl_all_v1.csv",
-    "Child_eVA_Questionnaire-SL.pdf" => "healsl_all_v1.csv",
-    "Neonate_eVA_Questionnaire-SL.pdf" => "healsl_all_v1.csv")
-
-    # Ethics - specify file extension in name
-    ethicsfolder::String = "Ethics"
-    ethics::Dict{String,Vector{String}} = Dict("IRB Renewed.pdf" => ["IRB Renewed", "Government of Sierra Leone", "4_COMSA Protocol - 27-Feb-2022.pdf"],
-    "Annexe 2 Consent forms- 27-Feb-2022.pdf" => ["Consent forms", "Government of Sierra Leone", "4_COMSA Protocol - 27-Feb-2022.pdf"])
-
-    # CSV format
-    delim::Char = ','
-    quotechar::Char = '"'
-    dateformat::String = "u dd, yyyy" 
-    decimal::Char = '.'
-    
 end
 
 """
@@ -271,22 +149,23 @@ abstract type AbstractIngest end
 
 Base.@kwdef mutable struct sourceIngest <: AbstractIngest 
     # Source
-    source::AbstractSource
+    source_name::String = "source"
 
     # Unique identifier of a row
     id_col::String = "id"
+    
+    # Site column 
+    site_col::String = "site"
 
     # Domain info
-    domain_name::String = "source"
-    domain_description::String = "domain for user 001"
+    domain_name::String = "source" #usually source name for raw data, different if harmonized
+    domain_description::String = "raw de-identified data"
+
+    # Data folder
+    datafolder::String = "De_identified_data"
 
     # Death file
     death_file::String = "data_death.csv"
-    # CSV format
-    delim::Char = ','
-    quotechar::Char = '"'
-    dateformat::String = "yyyy-mm-dd"
-    decimal::Char = '.'
     
     # Datasets matching to deaths
     datasets::Dict{String,String} = Dict("VA" => "data_va.csv", 
@@ -296,13 +175,16 @@ Base.@kwdef mutable struct sourceIngest <: AbstractIngest
     datadictionaries::Vector{String} = ["data_va_dictionary.xlsx",
                                         "data_mits_dictionary.xlsx"]
 
+    # Instruments
+    instruments::Dict{String,String} = Dict("instrument name" => "dataset name")
+
     # Metadata for ingestion 
     ingest_desc::String = "Ingest raw de-identified data"
     ingest_date::Date = today() #"yyyy-mm-dd"
     
     # Metadata for transformation
     transform_desc::String = "Ingest raw de-identified data"
-    code_reference::Vector{UInt8} = b"example code script"
+    code_reference::Dict{String,Vector{UInt8}} = Dict("code.ipynb" => b"example code script")
     author::String = ""
 
     # Default metadata for source ingestion
@@ -310,171 +192,22 @@ Base.@kwdef mutable struct sourceIngest <: AbstractIngest
     transformation_type_id::Integer = 1 #Raw data ingest
     transformation_status_id::Integer = 2 # Verified
 
-end
-
-"""
-Struct of ingest metadata for CHAMPS data 
-"""
-
-Base.@kwdef mutable struct CHAMPSIngest <: AbstractIngest 
-    # Source
-    source::AbstractSource = CHAMPSSource()
-
-    # Unique identifier of a row
-    id_col::String = "champs_deid"
-
-    # Domain info
-    domain_name::String = "CHAMPS"
-    domain_description::String = "Raw CHAMPS level-2 deidentified data"
-
-    # Death file
-    death_file::String = "CHAMPS_deid_basic_demographics.csv"
     # CSV format
     delim::Char = ','
     quotechar::Char = '"'
     dateformat::String = "yyyy-mm-dd"
     decimal::Char = '.'
-    
-    # Datasets matching to deaths
-    datasets::Dict{String,String} = Dict("CHAMPS deid basic demographics" => "CHAMPS_deid_basic_demographics.csv",
-        "CHAMPS deid verbal autopsy" => "CHAMPS_deid_verbal_autopsy.csv",
-        "CHAMPS deid decode results" => "CHAMPS_deid_decode_results.csv",
-        "CHAMPS deid tac results" => "CHAMPS_deid_tac_results.csv",
-        "CHAMPS deid lab results" => "CHAMPS_deid_lab_results.csv" )
-
-    # Data dictionaries
-    datadictionaries::Vector{String} = [
-        "CHAMPS_deid_basic_demographics_dictionary.xlsx",
-        "CHAMPS_deid_decode_results_dictionary.xlsx",
-        "CHAMPS_deid_tac_results_dictionary.xlsx",
-        "CHAMPS_deid_lab_results_dictionary.xlsx",
-        "CHAMPS_deid_verbal_autopsy_dictionary.xlsx"
-        # "Format_CHAMPS_deid_basic_demographics.csv",
-        # "Format_CHAMPS_deid_verbal_autopsy.csv",
-        # "Format_CHAMPS_deid_decode_results.csv",
-        # "Format_CHAMPS_deid_tac_results.csv",
-        # "Format_CHAMPS_deid_lab_results.csv"
-        ]
-
-    # Metadata for ingestion 
-    ingest_desc::String = "Raw CHAMPS level-2 Data accessed 20230518"
-    ingest_date::Date = today() #"yyyy-mm-dd"
-    
-    # Metadata for transformation
-    transform_desc::String = "Ingest of CHAMPS Level-2 Data"
-    code_reference::Vector{UInt8} = b"RDAIngest.ingest_data"
-    author::String = "Yue Chu, Kobus Herbst"
-
-    # Default metadata for source ingestion
-    unit_of_analysis_id::Integer = 1 #Individual
-    transformation_type_id::Integer = 1 #Raw data ingest
-    transformation_status_id::Integer = 2 # Verified
 
 end
 
-
-"""
-Struct of ingest metadata for COMSA - Mozambique data 
-"""
-
-Base.@kwdef mutable struct COMSAMZIngest <: AbstractIngest 
-    # Source
-    source::AbstractSource = COMSAMZSource()
-
-    # Unique identifier of a row
-    id_col::String = "comsa_id"
-
-    # Domain info
-    domain_name::String = "COMSAMZ"
-    domain_description::String = "Raw COMSA Mozambique level-2 deidentified data"
-
-    # Death file
-    death_file::String = "Comsa_WHO_VA_20230308.csv"
-    # CSV format
-    delim::Char = ','
-    quotechar::Char = '"'
-    dateformat::String = "u dd, yyyy" 
-    decimal::Char = '.'
-
-    # Datasets matching to deaths
-    datasets::Dict{String,String} = Dict("COMSA Mozambique deid verbal autopsy" => "Comsa_WHO_VA_20230308.csv")
-
-    # Data dictionaries
-    datadictionaries::Vector{String} = [
-        "Comsa_WHO_VA_20230308_dictionary.xlsx",
-        "Comsa_death_20230308_dictionary.xlsx"
-        # "Format_Comsa_death_20230308.csv",
-        # "Format_Comsa_WHO_VA_20230308.csv"
-    ]
-
-    # Metadata for ingestion 
-    ingest_desc::String = "Raw COMSA Mozambique level-2 Data accessed 20230518"
-    ingest_date::Date = today() #"yyyy-mm-dd"
-    
-    # Metadata for transformation
-    transform_desc::String = "Ingest of COMSA MZ Level-2 Data"
-    code_reference::Vector{UInt8} = b"RDAIngest.ingest_data"
-    author::String = "Yue Chu"
-
-    # Default metadata for source ingestion
-    unit_of_analysis_id::Integer = 1 #Individual
-    transformation_type_id::Integer = 1 #Raw data ingest
-    transformation_status_id::Integer = 2 # Verified
-    
-end
-
-"""
-Struct of ingest metadata for HEALSL (COMSA Sierra Leone) data 
-"""
-
-Base.@kwdef mutable struct HEALSLIngest <: AbstractIngest 
-    # Source
-    source::AbstractSource = HEALSLSource()
-
-    # Unique identifier of a row
-    id_col::String = "rowid"
-
-    # Domain info
-    domain_name::String = "HEALSL"
-    domain_description::String = "Raw HEAL Sierra Leone level-2 deidentified data"
-
-    # Death file
-    death_file::String = "Comsa_WHO_VA_20230308.csv"
-    # CSV format
-    delim::Char = ','
-    quotechar::Char = '"'
-    dateformat::String = "u dd, yyyy" 
-    decimal::Char = '.'
-
-    # Datasets matching to deaths
-    datasets::Dict{String,String} = Dict("HEALSL deid verbal autopsy" => "healsl_all_v1.csv")
-
-    # Data dictionaries
-    datadictionaries::Vector{String} = [
-        "healsl_all_v1_dictionary.xlsx"
-        # "Format_ddict_healsl.csv" 
-    ]
-
-    # Metadata for ingestion 
-    ingest_desc::String = "Raw HEALSL level-2 Data accessed 20230518"
-    ingest_date::Date = today() #"yyyy-mm-dd"
-    
-    # Metadata for transformation
-    transform_desc::String = "Ingest of HEALSL Level-2 Data"
-    code_reference::Vector{UInt8} = b"RDAIngest.ingest_data"
-    author::String = "Yue Chu"
-
-    # Default metadata for source ingestion
-    unit_of_analysis_id::Integer = 1 #Individual
-    transformation_type_id::Integer = 1 #Raw data ingest
-    transformation_status_id::Integer = 2 # Verified
-    
-end
 
 """
 Struct of ingest data and dictionary of user data products
 """
+
 Base.@kwdef mutable struct userIngest <: AbstractIngest 
+    # Source
+    source_name::String = "USER" #default
 
     # Unique identifier of a row
     id_col::String = "id"
@@ -482,53 +215,79 @@ Base.@kwdef mutable struct userIngest <: AbstractIngest
     # Domain info
     domain_name::String = "userORCID"
     domain_description::String = "Domain for user ORCID"
+    
+    # Project folder for user submission
+    project_folder::String = "srv/submissions/user/project_folder"
 
-    # Datasets
-    datasets::Dict{String,DataFrame} #Dict("data1" => df1)
+    # Data and dictionary
+    dataset_path::String = "data1.csv"
+    dictionary_path::String = "data1_dictionary.xlsx" 
+    dataset_name::String = "Dataset name" #descriptive name for dataset
+    dataset_desc::String = "Brief description of dataset" #description for dataset
 
-    # Data dictionaries
-    datadictionaries::Dict{String,String} = ["data1.csv" => "data_1_dictionary.xlsx",
-                                            "data2.csv" => "data_2_dictionary.xlsx"]
-
-    # Transformation input - list of input datasets for each dataset
-    input_datasets::Dict{String,Vector{Integer}} = Dict("data1.csv" => [1],
-                                                        "data2.csv" => [2,3]) 
+    # Metadata for dataset
+    doi::String = "doi number"
+    repository_id::String = "NADA reference ID"
     
     # Metadata for ingestion 
-    ingest_desc::String = "Raw CHAMPS level-2 Data accessed 20230518"
+    ingest_desc::String = "Ingestion of user data product"
     ingest_date::Date = today() #"yyyy-mm-dd"
 
     # Metadata for transformation
-    transform_desc::String = "Description of data processing methodology."
-    code_reference::Vector{UInt8} = b"code.ipynb"
+    input_datasets::Vector{Integer} = [2,3]
+    transform_desc::String = "Data processing methodology."
+    code_reference::Dict{String,Vector{UInt8}} = Dict("code.ipynb" => b"example code script")
     author::String = "user ORCID"
-    
-    # Default metadata for user data ingestion
-    unit_of_analysis_id::Integer = 2 #Aggregation
-    transformation_type_id::Integer = 2 #Dataset transform
-    transformation_status_id::Integer = 1 # Unverified
 
-    # CSV format - specify if csv
+    # Metadata file
+    repository_ddi_id::String = "repository_id_[ddi_version]yyyy-mm-dd"
+    repository_ddi_path::String = "repository_id.xml"
+    repository_rdf_path::String = "repository_id.rdf"
+
+    # CSV format
     delim::Char = ','
     quotechar::Char = '"'
     dateformat::String = "yyyy-mm-dd"
     decimal::Char = '.'
-    
+
+end
+
+
+"""
+Struct of metadata after approved for NADA
+"""
+
+Base.@kwdef mutable struct nadaMeta
+
+    dataset_name::String = "dataset name"
+
+    doi::String = "https://doi.org/xx.xxxxx/demo_doi"
+
+    # NADA
+    repository_id::String = "repository_id_[version]yyyy-mm-dd"
+    repository_ddi_id::String = "repository_id_[ddi_version]yyyy-mm-dd"
+    repository_ddi_path::String = "ddi.xml" #path to ddi .xml
+    repository_rdf_path::String = "rdf.rdf" #path to rdf .rdf
+
+    # Transformation
+    code_path::String = "code.ipynb" #path to jupyter notebook
+    transformation_status_id::Integer = 2
+
 end
 
 """
     ingest_source(source::AbstractSource, dbpath::String, dbname::String,
     datapath::String; sqlite=true)
 
-Ingest macro data of sources: sites, instruments, protocols, ethics
+Ingest meta data of sources: sites, instruments, protocols, ethics
 
-datapath: root folder with data from all sources [DATA_INGEST_PATH]
+datapath: root folder with data from the sources
 dbpath: path to open RDA database
 dbname: name of RDA database
 """
 
 function ingest_source(source::AbstractSource, dbpath::String, dbname::String,
-    datapath::String, iso3_path::String; sqlite=true)
+    datapath::String; sqlite=true)
     db = opendatabase(dbpath, dbname; sqlite)
     try
         DBInterface.transaction(db) do
@@ -539,18 +298,20 @@ function ingest_source(source::AbstractSource, dbpath::String, dbname::String,
             updatevalue(db, "sources", "source_id", "study_type_id", source_id, source.study_type_id)
 
             # Add sites and country iso2 codes
-            add_sites(source, db, source_id, datapath, iso3_path)
-            #@info "Site names, country names and country iso3 codes ingested."
+            add_sites(source, db, source_id, datapath)
+            @info "Site names, country names and country iso3 codes ingested."
 
-            # Add instruments
-            add_instruments(source, db, datapath)
-            #@info "Instrument document $value ingested."
-
-            # Add Protocols
+            # Add Protocols - need to be the first
             add_protocols(source, db, datapath)
+            @info "Protocol documents ingested."
 
             # Add Ethics
             add_ethics(source, db, datapath) 
+            @info "Ethics documents ingested."
+
+            # Add instruments
+            add_instruments(source, db, datapath)
+            @info "Instrument documents ingested."
 
         end
 
@@ -562,11 +323,11 @@ end
  
 
 """
-    add_sites(source::AbstractSource, db::DBInterface.Connection, sourceid::Integer, datapath::String, iso3_path::String)
+    add_sites(source::AbstractSource, db::DBInterface.Connection, sourceid::Integer, datapath::String)
 
 Add sites, countries and country iso3 codes to sites table
 """
-function add_sites(source::AbstractSource, db::DBInterface.Connection, sourceid::Integer, datapath::String, iso3_path::String)
+function add_sites(source::AbstractSource, db::DBInterface.Connection, sourceid::Integer, datapath::String)
     
     # Get sites of the study
     df = read_data(DocCSV(joinpath(datapath, source.name, source.datafolder),
@@ -580,9 +341,11 @@ function add_sites(source::AbstractSource, db::DBInterface.Connection, sourceid:
         sites = unique(select(df, Symbol(source.site_col) => :site_name))
         sites.country_name = fill(source.country_name, nrow(sites))
     end
+
+    # Replace missing as empty string
+    sites.site_name = coalesce.(sites.site_name, "")
     
     # Identify country name input and add iso3 
-    iso3_mapping = CSV.File(iso3_path) |> DataFrame
     if all(length.(sites.country_name) .== 2)
         sites = transform(sites, :country_name => ByRow(uppercase) => :iso2)
         sites = leftjoin(sites, iso3_mapping, on = :iso2)
@@ -590,6 +353,11 @@ function add_sites(source::AbstractSource, db::DBInterface.Connection, sourceid:
         sites = transform(sites, :country_name => ByRow(uppercase) => :iso3)
         sites = leftjoin(sites, iso3_mapping, on = :iso3)
     else
+        check = setdiff(unique(sites.country_name), unique(iso3_mapping.country))
+        if length(check)>0
+            @warn "The following country names are not recognized: $check. Please check spelling or letter case, or refer to `iso3_mapping` for supported country names."
+        end
+
         sites.country = sites.country_name
         sites = leftjoin(sites, iso3_mapping, on = :country)
     end
@@ -598,6 +366,9 @@ function add_sites(source::AbstractSource, db::DBInterface.Connection, sourceid:
 
     # Add sourceid 
     insertcols!(sites, 1, :source_id => sourceid)
+
+    # Drop missing
+    #sites = dropmissing(sites)
 
     savedataframe(db, sites, "sites")
     
@@ -622,7 +393,7 @@ function add_instruments(source::AbstractSource, db::DBInterface.Connection, dat
     for (key, value) in source.instruments
 
         # Add instruments
-        DBInterface.execute(stmt_name, [key, value]) 
+        DBInterface.execute(stmt_name, [key, value[1]]) 
 
         # Get instrument id
         instrument_id = get_namedkey(db, "instruments", key, Symbol("instrument_id"))
@@ -630,7 +401,17 @@ function add_instruments(source::AbstractSource, db::DBInterface.Connection, dat
         # Add instrument documents
         file = read_data(DocPDF(joinpath(datapath, source.name, source.instrumentfolder), "$key"))
         DBInterface.execute(stmt_doc, [instrument_id, key, file])
-        
+
+        # Link instrument to protocol
+        if ismissing(value[2]) || isempty(strip(String(value[2])))
+            @warn "No specified protocol is linked to the instrument."
+        else
+            protocol_id = get_namedkey(db, "protocols", strip(String(value[2])), :protocol_id)
+            if ismissing(protocol_id)
+                error("Protocol file $(value[2]) is not ingested.")
+            end 
+            insertdata(db, "protocol_instruments", ["instrument_id", "protocol_id"], [instrument_id, protocol_id])
+        end
     end
     return nothing
 end
@@ -640,8 +421,8 @@ end
     add_protocols(source::AbstractSource, db::SQLite.DB, datapath::String)
 
 Add protocols
-Todo: how protocols link to enthics_id, need a mapping dictionary? 
 """
+
 function add_protocols(source::AbstractSource, db::DBInterface.Connection, datapath::String)
 
     # Insert protocol names
@@ -680,8 +461,7 @@ end
 """
     add_ethics(source::AbstractSource, db::DBInterface.Connection, datapath::String)
 
-Ethics document, committee and reference need to be in matching order
-
+Add ethics documents
 """
 
 function add_ethics(source::AbstractSource, db::DBInterface.Connection, datapath::String)
@@ -706,9 +486,8 @@ function add_ethics(source::AbstractSource, db::DBInterface.Connection, datapath
 
         DBInterface.execute(stmt_doc, [ethics_id, key, value[1], file])
     
-        # Update ethics_id in protocols
+        # Link ethics to protocols
         protocol_id = get_namedkey(db, "protocols", value[3], Symbol("protocol_id"))
-
         sql = """
         UPDATE protocols
         SET 
@@ -736,6 +515,7 @@ function add_source(source_name::String, db::DBInterface.Connection)
     return id
 end
 
+
 """
     get_source(db::DBInterface.Connection, name)
 
@@ -758,23 +538,25 @@ function ingest_deaths(ingest::AbstractIngest, dbpath::String, dbname::String, d
     try
         DBInterface.transaction(db) do
 
-            source_id = get_source(db, ingest.source.name)
+            source_id = get_source(db, ingest.source_name)
 
             # Add ingestion info
             ingestion_id = insertwithidentity(db, "data_ingestions", ["source_id", "date_received", "description"], [source_id, isa(db, SQLite.DB) ? Dates.format(today(), "yyyy-mm-dd") : today(), ingest.ingest_desc], "data_ingestion_id")
             # transformation should not be created for the death ingestion
 
             # Ingest deaths
-            deaths = read_data(DocCSV(joinpath(datapath, ingest.source.name, ingest.source.datafolder),
-                ingest.death_file, ingest.delim, ingest.quotechar, ingest.dateformat, ingest.source.decimal))
+            deaths = read_data(DocCSV(joinpath(datapath, ingest.source_name, ingest.datafolder),
+                ingest.death_file, ingest.delim, ingest.quotechar, ingest.dateformat, ingest.decimal))
             sites = selectdataframe(db, "sites", ["site_id", "site_name"], ["source_id"], [source_id])
 
-            sitedeaths = innerjoin(transform!(deaths, Symbol(ingest.source.site_col) => :site_name),
+            # Replace missing sites as "" to match with sites - deaths with missing sites are not dropped
+            deaths[:,Symbol(ingest.site_col)] = coalesce.(deaths[:,Symbol(ingest.site_col)], "")
+            
+            sitedeaths = innerjoin(transform!(deaths, Symbol(ingest.site_col) => :site_name),
                 sites, on=:site_name, matchmissing=:notequal)
 
             savedataframe(db, select(sitedeaths, :site_id, Symbol(ingest.id_col) => :external_id,
                     [] => Returns(ingestion_id) => :data_ingestion_id, copycols=false), "deaths")
-
 
             return ingestion_id 
         end
@@ -803,21 +585,20 @@ function ingest_dictionary(ingest::AbstractIngest, dbpath::String, dbname::Strin
             # Add variables
             for filename in ingest.datadictionaries
 
-                #filename = "CHAMPS_deid_basic_demographics_dictionary.xlsx"
                 ext = split(filename, ".") |> last
                 if ext == "xlsx"
-                    sheets = XLSX.readxlsx(joinpath(dictionarypath, "$(ingest.domain_name)", filename))
+                    sheets = XLSX.readxlsx(joinpath(dictionarypath, "$(ingest.domain_name)", "Dictionaries", filename))
                     if length(XLSX.sheetnames(sheets))==1
-                        dict_var = DocXLSX(joinpath(dictionarypath, "$(ingest.domain_name)"), filename, XLSX.sheetnames(sheets)[1]) 
+                        dict_var = DocXLSX(joinpath(dictionarypath, "$(ingest.domain_name)", "Dictionaries"), filename, XLSX.sheetnames(sheets)[1]) 
                         dict_voc = missing
                     else
                         #Expected xlsx with sheets variables and vocabularies 
-                        dict_var = DocXLSX(joinpath(dictionarypath, "$(ingest.domain_name)"), filename, "variables") # Variables
-                        dict_voc = DocXLSX(joinpath(dictionarypath, "$(ingest.domain_name)"), filename, "vocabularies") # Vocabularies
+                        dict_var = DocXLSX(joinpath(dictionarypath, "$(ingest.domain_name)", "Dictionaries"), filename, "variables") # Variables
+                        dict_voc = DocXLSX(joinpath(dictionarypath, "$(ingest.domain_name)", "Dictionaries"), filename, "vocabularies") # Vocabularies
                     end
                 elseif ext == "csv"
                     #Expected csv with single sheet delimited by semi-colons, not the default source delimeter
-                    dict_var = DocCSV(joinpath(dictionarypath, "$(source.domain_name)"), filename, 
+                    dict_var = DocCSV(joinpath(dictionarypath, "$(ingest.domain_name)", "Dictionaries"), filename, 
                     ';', ingest.quotechar, ingest.dateformat, ingest.decimal)
                     dict_voc = missing
                 else 
@@ -833,12 +614,10 @@ function ingest_dictionary(ingest::AbstractIngest, dbpath::String, dbname::Strin
             # Mark key fields for easier reference later
             row = lookup_variables(db, ingest.id_col, domain)
             DBInterface.execute(db, "UPDATE variables SET keyrole = 'id' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
-
-            # if source is available in ingest
-            if ingest.source!=Missing  
-                row = lookup_variables(db, ingest.source.site_col, domain)
-                DBInterface.execute(db, "UPDATE variables SET keyrole = 'site_name' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
-            end
+ 
+            row = lookup_variables(db, ingest.site_col, domain)
+            DBInterface.execute(db, "UPDATE variables SET keyrole = 'site_name' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
+            
         end
         return nothing
     finally
@@ -930,6 +709,28 @@ function read_variables(dict_var::DocCSV, dict_voc::Missing)
         
     df_var = read_data(dict_var) 
 
+    if ("name" in names(df_var)) && !("Column_Name" in names(df_var))
+        rename!(df_var, :name => :Column_Name)
+    end
+
+    if ("description" in names(df_var)) && !("Description" in names(df_var))
+        rename!(df_var, :description => :Description)
+    end
+
+    if ("note" in names(df_var)) && !("Note" in names(df_var))
+        rename!(df_var, :note => :Note)
+    end
+
+    if ("value_type" in names(df_var)) && !("DataType" in names(df_var))
+        if eltype(df_var[!, "value_type"]) <: Int64
+            rename!(df_var, :value_type => :DataType)
+        else
+            mapping = Dict("Int64" => 1, "Float64" => 2, "String" => 3, 
+                            "Time" => 4, "Categorical" => 7)
+            df_var.DataType = get.(Ref(mapping), df_var.value_type, missing)
+        end
+    end
+    
     for row in eachrow(df_var)
         if !ismissing(row.Description) && length(lines(row.Description)) > 1
             l = lines(row.Description)
@@ -944,6 +745,7 @@ function read_variables(dict_var::DocCSV, dict_voc::Missing)
 
     return df_var
 end
+
 
 """
     get_vocabulary(variable, l)::Vocabulary
@@ -1171,7 +973,7 @@ end
 function ingest_data(ingest::AbstractIngest, dbpath::String, dbname::String, datapath::String; ingestion_id=0, sqlite=true)
     db = opendatabase(dbpath, dbname; sqlite)
     try
-        source_id = add_source(ingest.source.name, db)
+        source_id = add_source(ingest.source_name, db)
         domain_id = add_domain(db, ingest.domain_name, ingest.domain_description)
         death_idvar = get_variable_id(db, domain_id, ingest.id_col)
 
@@ -1188,7 +990,7 @@ function ingest_data(ingest::AbstractIngest, dbpath::String, dbname::String, dat
             for (dataset_desc, dataset_name) in ingest.datasets
 
                 # Import datasets
-                ds = read_data(DocCSV(joinpath(datapath, ingest.source.name, ingest.source.datafolder), dataset_name,
+                ds = read_data(DocCSV(joinpath(datapath, ingest.source_name, ingest.datafolder), dataset_name,
                     ingest.delim, ingest.quotechar, ingest.dateformat, ingest.decimal))
 
                 dataset_id = save_dataset(db, ds, dataset_name, dataset_desc, ingest.unit_of_analysis_id,
@@ -1198,7 +1000,7 @@ function ingest_data(ingest::AbstractIngest, dbpath::String, dbname::String, dat
                 if !death_in_ingest(db, ingestion_id)
                     # @info "Death data is not part of currrent data ingest $ingestion_id"
                     death_ingestion_id = get_last_deathingest(db, source_id)
-                    # @info "Death ingestion id not specified. By default, use lastest ingested deaths from source $(ingest.source.name) from ingestion id $death_ingestion_id."
+                    # @info "Death ingestion id not specified. By default, use lastest ingested deaths from source $(ingest.source_name) from ingestion id $death_ingestion_id."
                 else
                     death_ingestion_id = ingestion_id
                 end
@@ -1210,7 +1012,7 @@ function ingest_data(ingest::AbstractIngest, dbpath::String, dbname::String, dat
             end
 
             # Link to instruments in instrument_datasets
-            instruments = ingest.source.instruments
+            instruments = ingest.instruments
             if !isempty(instruments)
                 for (instrument_name, dataset_name) in instruments #instrument name, dataset name
                     link_instruments(db, instrument_name, dataset_name)
@@ -1239,8 +1041,9 @@ function save_dataset(db::DBInterface.Connection, dataset::AbstractDataFrame, na
     var_lookup = Dict{String,Tuple{Integer,Integer}}(zip(variables.name, variables.variable_id_type))
 
     # Add dataset entry to datasets table
-    dataset_id = insertwithidentity(db, "datasets", ["name", "date_created", "description", "unit_of_analysis_id"],
-        [name, isa(db, SQLite.DB) ? Dates.format(today(), "yyyy-mm-dd") : today(), description, unit_of_analysis_id], "dataset_id")
+    dataset_id = insertwithidentity(db, "datasets", 
+        ["name", "date_created", "description", "unit_of_analysis_id"],
+        [splitext(name)[1], isa(db, SQLite.DB) ? Dates.format(today(), "yyyy-mm-dd") : today(), description, unit_of_analysis_id], "dataset_id")
 
     insertdata(db, "ingest_datasets", ["data_ingestion_id", "transformation_id", "dataset_id"],
         [ingestion_id, transformation_id, dataset_id])
@@ -1304,6 +1107,7 @@ function add_data_column(db::SQLite.DB, variable_id, value_type, coldata)
     end
     return nothing
 end
+
 """
     add_data_column(db::ODBC.Connection, variable_id, value_type, coldata)
 
@@ -1545,6 +1349,28 @@ function get_variable(db::SQLite.DB, variable_id::Integer)
         return missing
     else
         return result
+    end
+end
+
+
+"""
+    get_idcol(db, domain_name::String)
+
+Get name of id column for a domain
+"""
+function get_idcol(db, domain_name::String)
+    sql = """
+        SELECT v.name
+        FROM variables AS v
+        JOIN domains AS d ON v.domain_id = d.domain_id
+        WHERE d.name = ?
+          AND v.keyrole = "id";
+    """
+    df = DBInterface.execute(db, sql, [domain_name]) |> DataFrame
+    if nrow(df) == 0
+        return missing
+    else
+        return df[1, :name]
     end
 end
 
@@ -1806,6 +1632,238 @@ function get_datasetname(db::ODBC.Connection, dataset)
     else
         return df[1, :name]
     end
+end
+
+"""
+    read_blob(file_path::String)::Vector{UInt8}
+
+Read file as BLOB
+"""
+function read_blob(file_path::String)::Vector{UInt8}
+    return read(file_path)
+end
+
+
+"""
+    ingest_dictionary(db::SQLite.DB, ingest::userIngest)
+
+Ingest data dictionaries, add variables and vocabularies for user data products
+"""
+
+# function ingest_dictionary(db::SQLite.DB, ingest::userIngest)
+
+#     domain = add_domain(db, ingest.domain_name, ingest.domain_description)
+
+#     dictionarypath = ingest.project_folder
+#     filename = ingest.dictionary_path
+#     filepath = joinpath(dictionarypath, filename)
+
+#     if !isfile(filepath)
+#         error("Data dictionary file does not exist at: $filepath")
+#     end
+
+#     # Add variables
+#     ext = split(filename, ".") |> last
+
+#     # Load variable and vocab sources before transaction
+#     dict_var = nothing
+#     dict_voc = missing
+#     if ext == "xlsx"
+#         sheets = XLSX.readxlsx(filepath)
+#         sheetnames = XLSX.sheetnames(sheets)
+#         if length(sheetnames) == 1
+#             dict_var = DocXLSX(dictionarypath, filename, sheetnames[1])
+#         else
+#             dict_var = DocXLSX(dictionarypath, filename, "variables")
+#             dict_voc = DocXLSX(dictionarypath, filename, "vocabularies")
+#         end
+#     elseif ext == "csv"
+#         dict_var = DocCSV(dictionarypath, filename,
+#                           ingest.delim, ingest.quotechar,
+#                           ingest.dateformat, ingest.decimal)
+#     else
+#         error("Unsupported file extension '$ext'. Please use .xlsx or .csv format.")
+#     end
+
+#     variables = read_variables(dict_var, dict_voc)
+#     add_variables(variables, db, domain)
+
+#     # Mark key fields for easier reference later
+#     row = lookup_variables(db, ingest.id_col, domain)
+#     DBInterface.execute(db, "UPDATE variables SET keyrole = 'id' WHERE domain_id = $domain AND variable_id = $(row.variable_id[1])")
+
+#     return nothing
+# end
+
+function ingest_dictionary(db::SQLite.DB, ingest::userIngest)
+    domain = add_domain(db, ingest.domain_name, ingest.domain_description)
+
+    dictionarypath = ingest.project_folder
+    filename = ingest.dictionary_path
+    filepath = joinpath(dictionarypath, filename)
+
+    if !isfile(filepath)
+        error("Data dictionary file does not exist at: $filepath")
+    end
+
+    # Load variable and vocab sources before any transaction
+    ext = split(filename, ".") |> last
+    dict_var = nothing
+    dict_voc = missing
+
+    if ext == "xlsx"
+        sheets = XLSX.readxlsx(filepath)
+        sheetnames = XLSX.sheetnames(sheets)
+        if length(sheetnames) == 1
+            dict_var = DocXLSX(dictionarypath, filename, sheetnames[1])
+        else
+            dict_var = DocXLSX(dictionarypath, filename, "variables")
+            dict_voc = DocXLSX(dictionarypath, filename, "vocabularies")
+        end
+    elseif ext == "csv"
+        dict_var = DocCSV(dictionarypath, filename,
+                          ingest.delim, ingest.quotechar,
+                          ingest.dateformat, ingest.decimal)
+    else
+        error("Unsupported file extension '$ext'. Please use .xlsx or .csv format.")
+    end
+
+    variables = read_variables(dict_var, dict_voc)
+    add_variables(variables, db, domain)
+
+    row = lookup_variables(db, ingest.id_col, domain)
+    DBInterface.execute(db,
+        "UPDATE variables SET keyrole = ? WHERE domain_id = ? AND variable_id = ?",
+        ("id", domain, row.variable_id[1])
+    )
+
+    return nothing
+end
+
+
+
+"""
+    updateMeta(db, meta::nadaMeta)
+
+Update metadata in db sqlite
+"""
+function updateMeta(db::SQLite.DB, meta::nadaMeta)
+    dataset_id = get_namedkey(db, "datasets", meta.dataset_name, :dataset_id)
+
+    # Datasets
+    updatevalue(db, "datasets", "dataset_id", "doi", dataset_id, meta.doi)
+    updatevalue(db, "datasets", "dataset_id", "repository_id", dataset_id, meta.repository_id)
+
+    # Repository
+    ddi_blob = read_blob(meta.repository_ddi_path)
+    rdf_blob = read_blob(meta.repository_rdf_path)
+    sql = """
+    INSERT OR IGNORE INTO repository (repository_id, repository_ddi_id, repository_ddi, repository_rdf)
+    VALUES (?, ?, ?, ?)
+    """
+    stmt = DBInterface.prepare(db, sql)
+    DBInterface.execute(stmt, [meta.repository_id, meta.repository_ddi_id, ddi_blob, rdf_blob])
+
+    # Transformations
+    sql = "SELECT transformation_id FROM transformation_outputs WHERE dataset_id = ?;"
+    stmt = DBInterface.prepare(db, sql)
+    transformation_id = DataFrame(DBInterface.execute(stmt, [dataset_id]))[1, :transformation_id]
+
+    code_blob = read_blob(meta.code_path)
+    updatevalue(db, "transformations", "transformation_id", "code_reference", transformation_id, code_blob)
+    updatevalue(db, "transformations", "transformation_id", "transformation_status_id", transformation_id, meta.transformation_status_id)
+    
+end
+
+
+
+"""
+    ingest_product(ingest::userIngest, dbpath::String, dbname::String; ingestion_id=0, sqlite=true)
+
+Ingest user data product along with metadata into RDA sqlite database
+"""
+
+function ingest_product(ingest::userIngest, dbpath::String, dbname::String; ingestion_id=0, sqlite=true)
+    db = opendatabase(dbpath, dbname; sqlite)
+
+    # Apply PRAGMA settings *outside* transaction
+    if isa(db, SQLite.DB)
+        DBInterface.execute(db, "PRAGMA journal_mode = WAL;")
+        DBInterface.execute(db, "PRAGMA synchronous = NORMAL;")
+        DBInterface.execute(db, "PRAGMA temp_store = MEMORY;")
+    end
+
+    try
+
+        # Get source and domain
+        domain_id = add_domain(db, ingest.domain_name, ingest.domain_description)
+        source_id = add_source("USER", db)
+
+        # Default metadata for user data ingestion
+        unit_of_analysis_id = 2 #Aggregation
+        transformation_type_id = 2 #Dataset transform
+        transformation_status_id = 2 # Verified
+
+        # Read dataset as dataframe
+        ds = read_data(DocCSV(ingest.project_folder, ingest.dataset_path,
+                                  ingest.delim, ingest.quotechar, ingest.dateformat, ingest.decimal))
+
+        # Read code as blob
+        code_blob = read_blob(joinpath(ingest.project_folder, ingest.code_reference))
+
+        # Read DDI files as blob
+        ddi_blob = Vector{UInt8}("DDI placeholder")
+        if !isempty(ingest.repository_ddi_path)
+            ddi_blob = read_blob(joinpath(ingest.project_folder, ingest.repository_ddi_path))
+        end
+
+        rdf_blob = Vector{UInt8}("DDI placeholder")
+        if !isempty(ingest.repository_rdf_path)
+            rdf_blob = read_blob(joinpath(ingest.project_folder, ingest.repository_rdf_path))
+        end
+
+        #DBInterface.transaction(db) do
+            
+        # Ingest data dictionary
+        ingest_dictionary(db, ingest)
+
+        # Record ingestion and transformation
+        if ingestion_id == 0
+            ingestion_id = insertwithidentity(db, "data_ingestions", ["source_id", "date_received", "description"], [source_id, isa(db, SQLite.DB) ? Dates.format(today(), "yyyy-mm-dd") : today(), ingest.ingest_desc], "data_ingestion_id")
+        end
+
+        transformation_id = insertwithidentity(db, "transformations", ["transformation_type_id", "transformation_status_id", "description", "code_reference", "date_created", "created_by"],
+            [transformation_type_id, transformation_status_id, 
+            ingest.transform_desc, code_blob, 
+            isa(db, SQLite.DB) ? Dates.format(today(), "yyyy-mm-dd") : today(), ingest.author], "transformation_id")
+            
+        # Ingest datasets
+        dataset_id = save_dataset(db, ds, ingest.dataset_name, ingest.dataset_desc, unit_of_analysis_id,
+                                  domain_id, transformation_id, ingestion_id)
+
+        # Update metadata
+        updatevalue(db, "datasets", "dataset_id", "doi", dataset_id, ingest.doi)
+        updatevalue(db, "datasets", "dataset_id", "repository_id", dataset_id, ingest.repository_id)
+
+        # Update transformation inputs
+        for input_id in ingest.input_datasets
+            sql = "INSERT INTO transformation_inputs (transformation_id, dataset_id) VALUES (?, ?)"
+            DBInterface.execute(db, sql, (transformation_id, input_id))
+        end
+
+        # Add repository
+        sql = """
+        INSERT OR IGNORE INTO repository (repository_id, repository_ddi_id, repository_ddi, repository_rdf)
+        VALUES (?, ?, ?, ?)
+        """
+        stmt = DBInterface.prepare(db, sql)
+        DBInterface.execute(stmt, [ingest.repository_id, ingest.repository_ddi_id, ddi_blob, rdf_blob])
+
+        #end
+    finally
+        DBInterface.close!(db)
+    end
+    return nothing
 end
 
 include("constants.jl")
