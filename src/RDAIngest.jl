@@ -32,7 +32,7 @@ export
     death_in_ingest, get_last_deathingest, link_instruments, link_deathrows, 
     get_namedkey, get_variable_id, get_variable, get_valuetype, get_datasetname, get_idcol,
 
-    updatevalue, rbind, insertdata, insertwithidentity, read_blob,
+    updatevalue, update_datavalue, rbind, insertdata, insertwithidentity, read_blob,
     get_table, selectdataframe, prepareselectstatement, selectsourcesites, 
 
     dataset_to_dataframe, dataset_to_arrow, dataset_to_csv, 
@@ -370,7 +370,13 @@ function add_sites(source::AbstractSource, db::DBInterface.Connection, sourceid:
     # Drop missing
     #sites = dropmissing(sites)
 
-    savedataframe(db, sites, "sites")
+    # Only insert sites not already present for this source
+    existing = selectdataframe(db, "sites", ["site_name"], ["source_id"], [sourceid])
+    sites = antijoin(sites, existing, on = :site_name, matchmissing = :notequal)
+
+    if nrow(sites) > 0
+        savedataframe(db, sites, "sites")
+    end
     
     return nothing
 end
@@ -1591,6 +1597,116 @@ function get_valuetype(db::ODBC.Connection, variable_id::Integer)
         error("Variable $variable_id not found.")
     end
 end
+
+
+"""
+    update_datavalue(db, dataset, id_col, id, variable, new_value; old_value=nothing)
+
+Update one data value: column `variable` of the record whose `id_col` equals `id` in dataset
+`dataset` (name or `dataset_id`). Values are given as text (dates as yyyy-mm-dd); `missing` = empty.
+With `old_value`, the update is made only if the current value matches it (number format ignored,
+"2500" == "2500.0"); otherwise an error is raised and nothing changes.
+Returns `:updated`, or `:unchanged` if the value already equals `new_value`.
+"""
+function update_datavalue(db::DBInterface.Connection, dataset, id_col, id, variable, new_value; old_value=nothing)
+    dataset_id = dataset isa Integer ? dataset : get_namedkey(db, "datasets", dataset, :dataset_id)
+    ismissing(dataset_id) && error("Dataset $dataset not found")
+    id_var = dataset_variable(db, dataset_id, id_col)
+    var = dataset_variable(db, dataset_id, variable)
+
+    sql = """
+    SELECT d.row_id FROM data d JOIN datarows r ON r.row_id = d.row_id
+    WHERE r.dataset_id = ? AND d.variable_id = ? AND $(datavalue_column(db, id_var.value_type_id)) = ?
+    """
+    rows = DBInterface.execute(DBInterface.prepare(db, sql), [dataset_id, id_var.variable_id, string(id)]) |> DataFrame
+    nrow(rows) == 1 || error("$id_col $id found $(nrow(rows)) times in dataset $dataset")
+    row_id = rows[1, :row_id]
+
+    sql = "SELECT $(datavalue_column(db, var.value_type_id)) AS value FROM data d WHERE d.row_id = ? AND d.variable_id = ?"
+    cur = DBInterface.execute(DBInterface.prepare(db, sql), [row_id, var.variable_id]) |> DataFrame
+    current = nrow(cur) == 0 ? missing : datavalue_text(cur[1, :value])
+
+    same_datavalue(current, new_value) && return :unchanged
+    old_value === nothing || same_datavalue(current, old_value) ||
+        error("$variable of $id_col $id in dataset $dataset is $(repr(current)), not $(repr(old_value)) - nothing changed")
+    write_datavalue(db, row_id, var.variable_id, var.value_type_id, new_value, nrow(cur) > 0)
+    return :updated
+end
+
+# variable_id and value_type_id of a variable in a dataset
+function dataset_variable(db::DBInterface.Connection, dataset_id, name)
+    sql = """
+    SELECT v.variable_id, v.value_type_id FROM variables v
+    JOIN dataset_variables dv ON dv.variable_id = v.variable_id
+    WHERE dv.dataset_id = ? AND v.name = ?
+    """
+    df = DBInterface.execute(DBInterface.prepare(db, sql), [dataset_id, name]) |> DataFrame
+    nrow(df) == 1 || error("Variable $name not found in dataset $dataset_id")
+    return df[1, :]
+end
+
+# Column (or expression) holding the value: SQLite stores every value as text in `value`
+datavalue_column(db::SQLite.DB, value_type_id) = "d.value"
+function datavalue_column(db::ODBC.Connection, value_type_id)
+    value_type_id == RDA_TYPE_INTEGER && return "d.value_integer"
+    value_type_id == RDA_TYPE_FLOAT && return "d.value_float"
+    value_type_id == RDA_TYPE_STRING && return "d.value_string"
+    value_type_id in (RDA_TYPE_DATE, RDA_TYPE_TIME, RDA_TYPE_DATETIME) && return "d.value_datetime"
+    value_type_id == RDA_TYPE_CATEGORY && return "COALESCE(CAST(d.value_integer AS varchar), d.value_string)"
+    error("Invalid value type $value_type_id")
+end
+
+datavalue_text(x) = ismissing(x) ? missing :
+                    x isa DateTime ? (Time(x) == Time(0) ? string(Date(x)) : string(x)) : string(x)
+
+# Same value, ignoring number format ("2500" == "2500.0"); missing == ""
+function same_datavalue(a, b)
+    a, b = coalesce(a, ""), coalesce(b, "")
+    a == b && return true
+    x, y = tryparse(Float64, string(a)), tryparse(Float64, string(b))
+    return x !== nothing && x == y
+end
+
+function write_datavalue(db::SQLite.DB, row_id, variable_id, value_type_id, value, exists)
+    # Text as written at ingestion (numbers as Julia prints them, dates yyyy-mm-dd); invalid values raise an error
+    s = ismissing(value) ? missing : string(value)
+    v = ismissing(s) ? s :
+        value_type_id == RDA_TYPE_INTEGER ? string(parse(Int, s)) :
+        value_type_id == RDA_TYPE_FLOAT ? string(parse(Float64, s)) :
+        value_type_id == RDA_TYPE_DATE ? string(Date(s)) : s
+    sql = """
+    INSERT INTO data (row_id, variable_id, value) VALUES (?, ?, ?)
+    ON CONFLICT (row_id, variable_id) DO UPDATE SET value = excluded.value
+    """
+    DBInterface.execute(DBInterface.prepare(db, sql), [row_id, variable_id, v])
+    return nothing
+end
+
+function write_datavalue(db::ODBC.Connection, row_id, variable_id, value_type_id, value, exists)
+    # Typed column as written by add_data_column; categorical codes are integers when numeric
+    s = ismissing(value) ? missing : string(value)
+    col, v = if value_type_id == RDA_TYPE_INTEGER
+        "value_integer", ismissing(s) ? s : parse(Int, s)
+    elseif value_type_id == RDA_TYPE_FLOAT
+        "value_float", ismissing(s) ? s : parse(Float64, s)
+    elseif value_type_id in (RDA_TYPE_DATE, RDA_TYPE_TIME, RDA_TYPE_DATETIME)
+        "value_datetime", ismissing(s) ? s : (value_type_id == RDA_TYPE_DATE ? DateTime(Date(s)) : DateTime(s))
+    elseif value_type_id == RDA_TYPE_CATEGORY && !ismissing(s) && tryparse(Int, s) !== nothing
+        "value_integer", parse(Int, s)
+    else
+        "value_string", s
+    end
+    others = filter(!=(col), ["value_integer", "value_float", "value_string", "value_datetime"])
+    if exists
+        sql = "UPDATE data SET $col = ?, $(join(others .* " = NULL", ", ")) WHERE row_id = ? AND variable_id = ?"
+        DBInterface.execute(DBInterface.prepare(db, sql), [v, row_id, variable_id])
+    else
+        sql = "INSERT INTO data (row_id, variable_id, $col) VALUES (?, ?, ?)"
+        DBInterface.execute(DBInterface.prepare(db, sql), [row_id, variable_id, v])
+    end
+    return nothing
+end
+
 
 """
     get_datasetname(db::SQLite.DB, dataset)
